@@ -299,12 +299,12 @@ float3 oren_nayar_and_sh(
 	float pi = 3.14159265358979323846264338327950;
 
 	float3 H     = normalize(view_light_dir + view_dir);
-	float  NdotL = clamp(dot(view_normal, view_light_dir), 0.0, 1.0);
+	float  NdotL = clamp(dot(view_normal, view_light_dir), 0.0001, 1.0);
 	float  NdotV = saturate(dot(view_normal, view_dir));
-	float  LdotH = clamp(dot(view_light_dir, H), 0.0, 1.0);
-	float  VdotH = clamp(dot(view_dir, H), 0.0, 1.0);
-	float  VdotL = clamp(dot(view_dir, view_light_dir), 0.0, 1.0);
-	float  NdotH = clamp(dot(view_normal, H), 0.0, 1.0);
+	float  LdotH = clamp(dot(view_light_dir, H), 0.0001, 1.0);
+	float  VdotH = clamp(dot(view_dir, H), 0.0001, 1.0);
+	float  VdotL = clamp(dot(view_dir, view_light_dir), 0.0001, 1.0);
+	float  NdotH = clamp(dot(view_normal, H), 0.0001, 1.0);
 	float  min_dot = min(NdotL, NdotV);
 
 	float ON_a2 = (1 / sqrt(2)) * atan(rough * rough);//DICE paper's method for roughness conversion

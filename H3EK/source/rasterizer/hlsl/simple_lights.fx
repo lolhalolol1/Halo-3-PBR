@@ -152,15 +152,15 @@ void calc_simple_lights_ggx(
 			light_index, fragment_position_world, light_radiance, fragment_to_light);
 
         float3 H    = normalize(fragment_to_light + view_dir);
-        float NdotL = clamp(dot(surface_normal, fragment_to_light), 0, 1);
-        float NdotV = clamp(abs(dot(surface_normal, view_dir)), 0.0, 1.0);
-        float LdotH = clamp(dot(fragment_to_light, H), 0.0, 1.0);
-		float VdotH = clamp(dot(view_dir, H), 0.0, 1.0);
+        float NdotL = clamp(dot(surface_normal, fragment_to_light), 0.0001, 1);
+        float NdotV = clamp(abs(dot(surface_normal, view_dir)), 0.0001, 1.0);
+        float LdotH = clamp(dot(fragment_to_light, H), 0.0001, 1.0);
+		float VdotH = clamp(dot(view_dir, H), 0.0001, 1.0);
 		float VdotL = dot(view_dir, fragment_to_light);
-        float NdotH = clamp(dot(surface_normal, H), 0.0, 1.0);
+        float NdotH = clamp(dot(surface_normal, H), 0.0001, 1.0);
         float a2_sqrd   = pow(a, 4);
     	float min_dot = min(NdotL, NdotV);
-		float3 fresnel = f0 + (f1 - f0) * pow(clamp(1.0 - VdotH, 0.0, 1.0), fresnel_power);
+		float3 fresnel = f0 + (f1 - f0) * pow(1.0 - VdotH, fresnel_power);
 		
         //Fresnel
         //Self explanitory.
