@@ -32,7 +32,7 @@ resolution to have a sufficient amount of mips. 128 per face is what I'd call th
 
 I've included a "dynamic_expensive" option made by @EnashMods that will use dynamic cubemaps and blur/convolute them in real time, but this is
 only there for testing purposes really.
-***Do not use this option*** if you use a mid-range/budget GPU as it is very expensive to run, and I strongly recommend you don't use this in any publically released mods. If you do use it, cap your framerate.
+***Do not use this option*** if you use a mid-range/budget GPU as it is very expensive to run, and I strongly recommend you don't use this in any publicly released mods. If you do use it, cap your framerate.
 
 ## Options
 There are several options to help you customize or tweak your materials Guerilla.
