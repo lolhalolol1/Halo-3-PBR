@@ -13,6 +13,7 @@ Sat, March 15, 2025 1:36pm (oli :D)
 //*****************************************************************************
 
 PARAM(bool, convert_material);
+PARAM(bool, ct_spec_rough);
 PARAM(bool, use_specular_tints);
 PARAM(float, roughness_bias);
 PARAM(float, roughness_multiplier);
@@ -361,20 +362,29 @@ void calc_material_analytic_specular_pbr_ps(
     float pi = 3.14159265358979323846264338327950;
 	material_parameters= saturate(sampleBiasGlobal2D(material_texture, transform_texcoord(texcoord, material_texture_xform)));
 
-	if(convert_material)
+	//Should probably make different material models for each of these conditions to avoid dumb if statements
+	if(!convert_material && !ct_spec_rough)
 	{
-		material_parameters.x = 1;
-		material_parameters.y =  saturate(max((1 - misc.x) * roughness_multiplier + roughness_bias, 0.005));
-		material_parameters.z = saturate(metallic_multiplier + metallic_bias);
+		material_parameters.y= clamp(material_parameters.y * roughness_multiplier + roughness_bias, 0.005, 1.0);
+		material_parameters.z= saturate(material_parameters.z * metallic_multiplier + metallic_bias);
 	}
 	else
 	{
-    	material_parameters.y= max(material_parameters.y * roughness_multiplier + roughness_bias, 0.005);
-		material_parameters.z= saturate(material_parameters.z * metallic_multiplier + metallic_bias);
+		if(ct_spec_rough)
+		{
+			material_parameters.xyz = float3(1, 
+											 clamp(material_parameters.y * roughness_multiplier + roughness_bias, 0.005, 1.0), 
+											 saturate(material_parameters.x * metallic_multiplier + metallic_bias));
+		}
+		else
+		{
+			material_parameters.x = 1;
+			material_parameters.y = clamp((1 - misc.x) * roughness_multiplier + roughness_bias, 0.005, 1.0);
+			material_parameters.z = saturate(misc.x * metallic_multiplier + metallic_bias);
+		}
 	}
-
     float3 H    = normalize(light_dir + view_dir);
-    float NdotL = clamp(dot(normal_dir, light_dir), 0.0, 1.0);
+    float NdotL = clamp(dot(normal_dir, light_dir), 0.0001, 1.0);
 	float NdotV = clamp(abs(dot(normal_dir, view_dir)), 0.0, 1.0);
     float LdotH = clamp(dot(light_dir, H), 0.0, 1.0);
 	float VdotH = clamp(dot(view_dir, H), 0.0, 1.0);
@@ -493,11 +503,11 @@ void calc_material_pbr_ps(
 	float3 fRough;
 	if (use_specular_tints)
 	{
-	fRough = f0 + (f1 - f0) * pow(1.0 - NdotV, fresnel_power);
+		fRough = f0 + (f1 - f0) * pow(1.0 - NdotV, fresnel_power);
 	}
 	else
 	{
-	fRough = f0 + (max(gloss, f0) - f0) * pow(1.0 - NdotV, fresnel_power);
+		fRough = f0 + (max(gloss, f0) - f0) * pow(1.0 - NdotV, fresnel_power);
 	}
 
 	float3 simple_light_diffuse_light;
@@ -524,67 +534,10 @@ void calc_material_pbr_ps(
 		simple_light_specular_light= 0.0f;
 	}
 
-	//float3 sh_glossy= 0.0f;
-	// calculate area specular
-
-	//sh_glossy= EnvBRDFApprox(fRough, rough, NdotV);
-
-	/*if (!use_specular_tints)
-	{
-		// calculate area specular
-		float r_dot_l= max(dot(analytical_light_dir, view_reflect_dir_world), 0.0f) * 0.65f + 0.35f;
-
-		//calculate the area sh
-		float3 specular_part=0.0f;
-		float3 schlick_part=0.0f;
-		
-		if (order3_area_specular)
-		{
-			float4 sh_0= sh_lighting_coefficients[0];
-			float4 sh_312[3]= {sh_lighting_coefficients[1], sh_lighting_coefficients[2], sh_lighting_coefficients[3]};
-			float4 sh_457[3]= {sh_lighting_coefficients[4], sh_lighting_coefficients[5], sh_lighting_coefficients[6]};
-			float4 sh_8866[3]= {sh_lighting_coefficients[7], sh_lighting_coefficients[8], sh_lighting_coefficients[9]};
-			sh_glossy_ct_3(
-				view_dir,
-				surface_normal,
-				sh_0,
-				sh_312,
-				sh_457,
-				sh_8866,	//NEW_LIGHTMAP: changing to linear
-				spatially_varying_material_parameters.g,
-				r_dot_l,
-				1,
-				specular_part,
-				schlick_part);
-		}
-		else
-		{
 	
-			float4 sh_0= sh_lighting_coefficients[0];
-			float4 sh_312[3]= {sh_lighting_coefficients[1], sh_lighting_coefficients[2], sh_lighting_coefficients[3]};
-			
-			sh_glossy_ct_2(
-				view_dir,
-				surface_normal,
-				sh_0,
-				sh_312,
-				spatially_varying_material_parameters.g,
-				r_dot_l,
-				1,
-				specular_part,
-				schlick_part);
-		}
+	envmap_specular_reflectance_and_roughness= float4(min(EnvBRDFApprox(fRough, rough, NdotV) * (diffuse_radiance + simple_light_diffuse_light), 1.0), rough);
+	envmap_area_specular_only = prt_ravi_diff.z * cubemap_or_area_specular;
 
-		envmap_area_specular_only= f0 * specular_part + (1 - f0) * schlick_part;
-		envmap_specular_reflectance_and_roughness.xyz= prt_ravi_diff.z;
-		envmap_specular_reflectance_and_roughness.a= spatially_varying_material_parameters.a;
-	}
-	else
-	{*/
-		envmap_specular_reflectance_and_roughness= float4(EnvBRDFApprox(fRough, rough, NdotV) * (diffuse_radiance + simple_light_diffuse_light), rough);
-		envmap_area_specular_only = prt_ravi_diff.z * cubemap_or_area_specular;
-	//}
-	//#endif
 	diffuse_radiance = 	oren_nayar_and_sh(
 							view_dir,
 							surface_normal,

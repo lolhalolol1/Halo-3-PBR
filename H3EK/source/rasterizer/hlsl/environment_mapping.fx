@@ -336,7 +336,7 @@ float3 calc_environment_map_dynamic_expensive_ps(
 	in float4 envmap_specular_reflectance_and_roughness,
 	in float3 low_frequency_specular_color)
 {
-	const float roughness = max(0.05, envmap_specular_reflectance_and_roughness.w) * env_roughness_scale;
+	const float roughness = max(0.05, envmap_specular_reflectance_and_roughness.w);
 	const float3 N = normalize(normal);
 	const float3 V = normalize(view_dir);
 	float NoV = max(dot(N, V), 0.001);
@@ -356,7 +356,7 @@ float3 calc_environment_map_dynamic_expensive_ps(
 	float grad_x = length(ddx(reflect_dir));
 	float grad_y = length(ddy(reflect_dir));
 	float base_lod = 6.0f * sqrt(max(grad_x, grad_y)) - 0.6f;
-	float lod = max(base_lod, envmap_specular_reflectance_and_roughness.w * env_roughness_scale * 8);
+	float lod = max(base_lod, envmap_specular_reflectance_and_roughness.w * 8);
 
 	uint sample_count = uint(1 + 127 * lod * lod);
 	sample_count = clamp(sample_count, 1, 128);
