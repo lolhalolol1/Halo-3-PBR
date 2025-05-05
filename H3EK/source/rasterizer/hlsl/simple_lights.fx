@@ -184,15 +184,26 @@ void calc_simple_lights_ggx(
 		specularly_reflected_light = 0.00001f;
 
         //Oren-Nayar
-		float ON_a2 = (1 / sqrt(2)) * atan(a * a);//DICE paper's method for roughness conversion
-		float A		= 1 + -0.5 * ON_a2 / (ON_a2 + 0.33);
-		float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
-		float C		= 1 / max(NdotL, NdotV);
+		//wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
+		/*
+		The github this function is pulled from (https://github.com/glslify/glsl-diffuse-oren-nayar) states that values for the float below above 0.96
+		will not be energy conserving. This is because the output of this function is intended to be multiplied by albedo afterwards for the final diffuse.
 
-		float somethin 	= max(VdotL - NdotL * NdotV, 0);
+		I may need to use this for more than just diffuse, so this will be left as 1.0 and we can multiply the function's output by the albedo map and
+		then (1 - Fresnel) to maintain energy conservation.
+		*/
 
-		float3 ONdif 	= NdotL * (1 / pi) * (A + B * somethin * C);
-		ONdif			= (1 - fresnel) * max(ONdif, 0.0) * light_radiance;
+		float albedo_standin = (1 - f0);
+
+		float s = VdotL - NdotL * NdotV;
+		float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
+
+		float sigma2 = (1 / sqrt(2)) * atan(a * a);
+		float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+		float B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+
+		float3 ONdif = (albedo_standin * max(0.0, NdotL) * saturate(A + B * s / t) * light_radiance / pi);
 
 		
 		//Halo 3 diffuse

@@ -336,10 +336,10 @@ float3 calc_environment_map_dynamic_expensive_ps(
 	in float4 envmap_specular_reflectance_and_roughness,
 	in float3 low_frequency_specular_color)
 {
-	const float roughness = max(0.05, envmap_specular_reflectance_and_roughness.w);
+	const float roughness = envmap_specular_reflectance_and_roughness.w;
 	const float3 N = normalize(normal);
 	const float3 V = normalize(view_dir);
-	float NoV = max(dot(N, V), 0.001);
+	float NoV = max(dot(N, V), 0.0001);
 
 	// Precompute blend factors once (Optimization 1)
 	float3 blend0 = dynamic_environment_blend.rgb;
@@ -367,7 +367,7 @@ float3 calc_environment_map_dynamic_expensive_ps(
 		half3 H = importance_sample_GGX(Xi, roughness, N, tangent_space);
 		float3 L = reflect(-V, H);
 
-		float NoL = max(dot(N, L), 0.0);
+		float NoL = max(dot(N, L), 0.0001);
 		float NoH = max(dot(N, H), 0.0);
 		float VoH = max(dot(V, H), 0.0);
 

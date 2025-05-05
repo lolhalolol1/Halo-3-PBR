@@ -295,10 +295,11 @@ float3 oren_nayar_and_sh(
 	in float3 light_color,
 	in float rough,
 	in float4 sh_lighting_coefficients[10],
-	in float3 fresnel_analytical)
+	in float3 f0)
 {
 	float pi = 3.14159265358979323846264338327950;
 
+/*
 	float3 H     = normalize(view_light_dir + view_dir);
 	float  NdotL = clamp(dot(view_normal, view_light_dir), 0.0001, 1.0);
 	float  NdotV = saturate(dot(view_normal, view_dir));
@@ -317,7 +318,54 @@ float3 oren_nayar_and_sh(
 
 	float3 ON	= NdotL * (1 / pi) * (A + B * somethin * C);
 
-	float3 ONdif = (1 - fresnel_analytical) * max(ON, 0.0) * light_color;
+	float3 ONdif = (1 - fresnel_analytical) * max(ON, 0.0) * light_color;*/
+
+
+
+    float H = normalize(view_light_dir + view_dir);
+    float NoL = dot(view_normal, view_light_dir); 
+	float NoV = dot(view_normal, view_dir);
+	float LoV = dot(view_light_dir, view_dir);
+    float HoV = saturate(dot(H, view_dir));
+
+    //wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
+    /*
+    The github this function is pulled from (https://github.com/glslify/glsl-diffuse-oren-nayar) states that values for the float below above 0.96
+    will not be energy conserving. This is because the output of this function is intended to be multiplied by albedo afterwards for the final diffuse.
+
+    I may need to use this for more than just diffuse, so this will be left as 1.0 and we can multiply the function's output by the albedo map and
+    then (1 - Fresnel) to maintain energy conservation.
+    */
+
+    float albedo_standin = (1 - f0);
+
+    float s = LoV - NoL * NoV;
+    float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
+
+    float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+    float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+    float B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+
+    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / pi);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);
@@ -380,15 +428,15 @@ void calc_material_analytic_specular_pbr_ps(
 		{
 			material_parameters.x = 1;
 			material_parameters.y = clamp((1 - misc.x) * roughness_multiplier + roughness_bias, 0.005, 1.0);
-			material_parameters.z = saturate(misc.x * metallic_multiplier + metallic_bias);
+			material_parameters.z = metallic_bias;
 		}
 	}
     float3 H    = normalize(light_dir + view_dir);
     float NdotL = clamp(dot(normal_dir, light_dir), 0.0001, 1.0);
-	float NdotV = clamp(abs(dot(normal_dir, view_dir)), 0.0, 1.0);
-    float LdotH = clamp(dot(light_dir, H), 0.0, 1.0);
-	float VdotH = clamp(dot(view_dir, H), 0.0, 1.0);
-    float NdotH = clamp(dot(normal_dir, H), 0.0, 1.0);
+	float NdotV = clamp(abs(dot(normal_dir, view_dir)), 0.0001, 1.0);
+    float LdotH = clamp(dot(light_dir, H), 0.0001, 1.0);
+	float VdotH = clamp(dot(view_dir, H), 0.0001, 1.0);
+    float NdotH = clamp(dot(normal_dir, H), 0.0001, 1.0);
     float min_dot = min(NdotL, NdotV);
 
     float a2_sqrd   = pow(material_parameters.y, 4);
@@ -535,10 +583,10 @@ void calc_material_pbr_ps(
 	}
 
 	
-	envmap_specular_reflectance_and_roughness= float4(min(EnvBRDFApprox(fRough, rough, NdotV) * (diffuse_radiance + simple_light_diffuse_light), 1.0), rough);
+	envmap_specular_reflectance_and_roughness= float4(EnvBRDFApprox(fRough, rough, NdotV) * (diffuse_radiance), rough);
 	envmap_area_specular_only = prt_ravi_diff.z * cubemap_or_area_specular;
 
-	diffuse_radiance = 	oren_nayar_and_sh(
+	diffuse_radiance = oren_nayar_and_sh(
 							view_dir,
 							surface_normal,
 							analytical_light_dir,
