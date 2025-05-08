@@ -1361,7 +1361,7 @@ accum_pixel default_dynamic_light_ps(
 								specular_fresnel_color,
 								texcoord,
 								albedo
-								);
+								) * albedo * (1 - spatially_varying_material_parameters.z);
 	radiance += analytic_specular_radiance;
 
 #else

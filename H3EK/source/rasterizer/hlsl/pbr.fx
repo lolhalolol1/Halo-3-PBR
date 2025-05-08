@@ -259,33 +259,34 @@ float3 oren_nayar(
 	in float3 view_normal,
 	in float3 view_light_dir,
 	in float3 light_color,
-	in float3 fresnel_analytical,
+	in float3 f0,
 	in float2 texcoord,
 	in float3 albedo
 )
 {
 	float3 metal_rough = saturate(sampleBiasGlobal2D(material_texture, transform_texcoord(texcoord, material_texture_xform)).xyz);
-		float pi = 3.14159265358979323846264338327950;
+	float rough = metal_rough.y;
+	float pi = 3.14159265358979323846264338327950;
 
-	float3 H     = normalize(view_light_dir + view_dir);
-	float  NdotL = clamp(dot(view_normal, view_light_dir), 0.0, 1.0);
-	float  NdotV = saturate(dot(view_normal, view_dir));
-	float  LdotH = clamp(dot(view_light_dir, H), 0.0, 1.0);
-	float  VdotH = clamp(dot(view_dir, H), 0.0, 1.0);
-	float  VdotL = clamp(dot(view_dir, view_light_dir), 0.0, 1.0);
-	float  NdotH = clamp(dot(view_normal, H), 0.0, 1.0);
-	float  min_dot = min(NdotL, NdotV);
+    float H = normalize(view_light_dir + view_dir);
+    float NoL = dot(view_normal, view_light_dir); 
+	float NoV = dot(view_normal, view_dir);
+	float LoV = dot(view_light_dir, view_dir);
+    float HoV = saturate(dot(H, view_dir));
 
-	float ON_a2 = (1 / sqrt(2)) * atan(metal_rough.y * metal_rough.y);//DICE paper's method for roughness conversion
-	float A		= 1 + -0.5 * ON_a2 / (ON_a2 + 0.33);
-	float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
-	float C		= 1 / max(NdotL, NdotV);
+    float albedo_standin = 0.96;
 
-	float somethin 	= max(VdotL - NdotL * NdotV, 0);
+    float s = LoV - NoL * NoV;
+    float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
 
-	float3 ON	= NdotL * (1 / pi) * (A + B * somethin * C);
+    float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+    float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+    float B = 0.45 * sigma2 / (sigma2 + 0.09);
 
-	return (albedo * (1 - fresnel_analytical) * max(ON, 0.0) * light_color) * (1 - metal_rough.z);
+
+    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / pi) * albedo;
+
+	return ONdif;
 }
 
 float3 oren_nayar_and_sh(
@@ -337,7 +338,7 @@ float3 oren_nayar_and_sh(
     then (1 - Fresnel) to maintain energy conservation.
     */
 
-    float albedo_standin = (1 - f0);
+    float albedo_standin = 0.96;
 
     float s = LoV - NoL * NoV;
     float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
@@ -348,24 +349,6 @@ float3 oren_nayar_and_sh(
 
 
     float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / pi);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);

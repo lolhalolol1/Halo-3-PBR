@@ -181,7 +181,7 @@ void calc_simple_lights_ggx(
         float3 denominator  = max(4.0 * NdotV * NdotL, 0.0001);
         specularly_reflected_light += (numerator / denominator) * light_radiance * NdotL;//Light radiance was light irradiance, so keep an eye on that if there's issues.
 
-		specularly_reflected_light = 0.00001f;
+		//specularly_reflected_light = 0.00001f;
 
         //Oren-Nayar
 		//wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
@@ -193,7 +193,7 @@ void calc_simple_lights_ggx(
 		then (1 - Fresnel) to maintain energy conservation.
 		*/
 
-		float albedo_standin = (1 - f0);
+		float albedo_standin = 0.96;
 
 		float s = VdotL - NdotL * NdotV;
 		float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
