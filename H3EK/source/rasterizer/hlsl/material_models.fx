@@ -19,7 +19,7 @@
 #define MATERIAL_TYPE_car_paint 11
 #define MATERIAL_TYPE_two_lobe_phong_tint_map 12
 #define MATERIAL_TYPE_pbr 13
-
+#define MATERIAL_TYPE_pbr_spec_gloss 14
 
 // all material models must define these 4 functions
 #define CALC_MATERIAL(material) calc_material_##material##_ps
@@ -208,5 +208,13 @@ PARAM(bool, no_dynamic_lights);
 //*****************************************************************************
 #if MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr
 #include "pbr.fx"
+#define NO_ALPHA_TO_COVERAGE
+#endif
+
+//*****************************************************************************
+// two lobe phong model with specular tint colors got from special texture
+//*****************************************************************************
+#if MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss
+#include "pbr_spec_gloss.fx"
 #define NO_ALPHA_TO_COVERAGE
 #endif

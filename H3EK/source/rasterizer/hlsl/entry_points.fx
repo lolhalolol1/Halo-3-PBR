@@ -1365,6 +1365,39 @@ accum_pixel default_dynamic_light_ps(
 	radiance += analytic_specular_radiance;
 
 #else
+#ifdef _PBR_SPEC_GLOSS_FX_
+	float3 specular_fresnel_color;
+	float3 specular_albedo_color;
+	float power_or_roughness;
+	float3 analytic_specular_radiance;
+	
+	float4 spatially_varying_material_parameters;
+
+	CALC_MATERIAL_ANALYTIC_SPECULAR(material_type)(
+		view_dir,
+		bump_normal,
+		view_reflect_dir,
+		fragment_to_light,
+		light_radiance,
+		albedo,									// diffuse reflectance (ignored for cook-torrance)
+		texcoord,
+		1.0f,
+		vsout.normal,
+		misc,
+		spatially_varying_material_parameters,			// only when use_material_texture is defined
+		specular_fresnel_color,							// fresnel(specular_albedo_color)
+		specular_albedo_color,							// specular reflectance at normal incidence
+		analytic_specular_radiance);
+
+		float metallic = max(max(spatially_varying_material_parameters.x, spatially_varying_material_parameters.y), spatially_varying_material_parameters.z);
+
+		metallic = metallic + (max(1 - spatially_varying_material_parameters.w, metallic) - metallic) * pow(saturate(dot(bump_normal, view_dir)), 5);
+
+		float3 analytic_diffuse_radiance= light_radiance * dot(fragment_to_light, bump_normal) * (1 - metallic) * albedo.rgb;
+		float3 radiance= analytic_diffuse_radiance * GET_MATERIAL_DIFFUSE_MULTIPLIER(material_type)();
+
+		radiance += analytic_specular_radiance;
+#else
 		// calculate diffuse lobe
 		float3 analytic_diffuse_radiance= light_radiance * dot(fragment_to_light, bump_normal) * albedo.rgb;
 		float3 radiance= analytic_diffuse_radiance * GET_MATERIAL_DIFFUSE_MULTIPLIER(material_type)();
@@ -1409,6 +1442,7 @@ accum_pixel default_dynamic_light_ps(
 		
 			radiance += analytic_specular_radiance * specular_multiplier;
 		}
+#endif
 #endif
 
 

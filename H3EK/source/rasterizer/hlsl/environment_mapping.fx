@@ -52,7 +52,7 @@ float3 calc_environment_map_per_pixel_ps(
 #ifdef pc	
 	if(MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
 	{
-	reflection= sampleCUBElod(environment_map, reflect_dir, specular_reflectance_and_roughness.a * 7);
+	reflection= sampleCUBElod(environment_map, reflect_dir, specular_reflectance_and_roughness.a * 8);
 	}
 	else
 	{
@@ -93,8 +93,12 @@ float3 calc_environment_map_dynamic_ps(
 	float grad_x= length(ddx(reflect_dir));
 	float grad_y= length(ddy(reflect_dir));
 	float base_lod= 6.0f * sqrt(max(grad_x, grad_y)) - 0.6f;
-	float lod= max(base_lod, specular_reflectance_and_roughness.w * env_roughness_scale * 4);
-	
+	#if  (defined(_PBR_FX_) ||defined(_PBR_SPEC_GLOSS_FX_))
+		float lod= pow(specular_reflectance_and_roughness.w, 1 / 2.2) * 8;
+	#else
+		float lod= max(base_lod, specular_reflectance_and_roughness.w * env_roughness_scale * 4);
+	#endif
+
 	reflection_0= sampleCUBElod(dynamic_environment_map_0, reflect_dir, lod);
 	reflection_1= sampleCUBElod(dynamic_environment_map_1, reflect_dir, lod);
 	
