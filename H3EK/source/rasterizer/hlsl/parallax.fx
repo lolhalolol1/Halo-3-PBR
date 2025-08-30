@@ -130,9 +130,9 @@ void calc_parallax_custom_ps(
     float2 p = viewTS.xy / viewTS.z * parallax_scale; 
     float2 deltaUV = p / parallax_samples_max;//--------------------------------Math to set up how much we offset the texture coordinates each time we do our ray march.
 
-	float2 currentUV = transform_texcoord(texcoord, height_map_xform);//--------This starts out as our regular UV coordinates, but will be offset by deltaUV in the loop bellow.
+	float2 currentUV = texcoord;//--------This starts out as our regular UV coordinates, but will be offset by deltaUV in the loop bellow.
     
-	float sampledDepth = 1 - sample2D(height_map, currentUV).g;//---------------The depth value of the current sampled pixel at the original texcoord.
+	float sampledDepth = 1 - sample2D(height_map, transform_texcoord(currentUV, height_map_xform)).g;//---------------The depth value of the current sampled pixel at the original texcoord.
 
 
     [loop]
@@ -140,7 +140,7 @@ void calc_parallax_custom_ps(
     {
         currentUV -= deltaUV;//										...offset the UV to the ray's next position, then...
 
-        sampledDepth = 1 - sample2D(height_map, currentUV).g;//	...sample the depth value at next position, then..
+        sampledDepth = 1 - sample2D(height_map, transform_texcoord(currentUV, height_map_xform)).g;//	...sample the depth value at next position, then..
 
         currentRayDepth  += sampleInterval;//						...update the depth the ray is at, then...(repeat)
     }/*
@@ -161,7 +161,7 @@ void calc_parallax_custom_ps(
 
     float afterDepth = sampledDepth - currentRayDepth;//Difference between the current sample's depth and the height value at that sample. 
 
-    float beforeDepth = (1 - sample2D(height_map, priorUV).g) - currentRayDepth + sampleInterval;//Difference between the prior sample's depth and the height at that sample.
+    float beforeDepth = (1 - sample2D(height_map, transform_texcoord(priorUV, height_map_xform)).g) - currentRayDepth + sampleInterval;//Difference between the prior sample's depth and the height at that sample.
 
     float weight = afterDepth / (afterDepth - beforeDepth);//We use those last two values to create a coefficient.
 
