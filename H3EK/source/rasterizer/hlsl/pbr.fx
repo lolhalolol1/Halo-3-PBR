@@ -5,12 +5,13 @@
 pbr.fx
 Sat, March 15, 2025 1:36pm (oli :D)
 */
-
-
+#define PI 3.14159265358979323846264338327950f
+#define _epsilon 0.00001f
 
 //*****************************************************************************
 // Analytical Diffuse-Only for point light source only
 //*****************************************************************************
+
 
 PARAM(bool, convert_material);
 PARAM(bool, ct_spec_rough);
@@ -23,210 +24,23 @@ PARAM(float, fresnel_curve_steepness);
 
 PARAM(float3, normal_specular);			//reflectance at normal incidence
 PARAM(float3, glancing_specular);
-PARAM(float, albedo_blend);
-PARAM(float, cubemap_or_area_specular);
+PARAM(float,  albedo_blend);
+PARAM(float,  cubemap_or_area_specular);
 
-PARAM_SAMPLER_2D(g_sampler_cc0236);					//pre-integrated texture
-PARAM_SAMPLER_2D(g_sampler_dd0236);					//pre-integrated texture
-PARAM_SAMPLER_2D(g_sampler_c78d78);					//pre-integrated texture
-
-//PARAM(float3, reflect);					//pre-integrated texture
-
-#define A0_88			0.886226925f
-#define A2_10			1.023326708f
-#define A6_49			0.495415912f
+PARAM(bool, 	chameleon);
+PARAM(float4, 	front_colour);
+PARAM(float, 	front_power);
+PARAM(float4, 	mid_colour);
+PARAM(float, 	mid_power);
+PARAM(float4, 	rim_colour);
+PARAM(float, 	rim_power);
 
 //*****************************************************************************
 // cook-torrance for area light source in SH space
 //*****************************************************************************
-
-float3 sh_rotate_023(
-	int irgb,
-	float3 rotate_x,
-	float3 rotate_z,
-	float4 sh_0,
-	float4 sh_312[3])
-{
-	float3 result= float3(
-			sh_0[irgb],
-			-dot(rotate_z.xyz, sh_312[irgb].xyz),
-			dot(rotate_x.xyz, sh_312[irgb].xyz));
-			
-	return result;
-	
-}
-	
-#define c_view_z_shift 0.5f/32.0f
-#define	c_roughness_shift 0.0f
-
-#define SWIZZLE xyzw
-
-//linear
-void sh_glossy_ct_2(
-	in float3 view_dir,
-	in float3 rotate_z,
-	in float4 sh_0,
-	in float4 sh_312[3],
-	in float roughness,
-	in float r_dot_l,
-	in float power,
-	out float3 specular_part,
-	out float3 schlick_part)
-{
-	//build the local frame
-	float3 rotate_x= normalize(view_dir - dot(view_dir, rotate_z) * rotate_z);		// view vector projected onto tangent plane
-	float3 rotate_y= cross(rotate_z, rotate_x);										// third one, 90 degrees  :)
-	
-	//local view
-	float t_roughness = max(roughness, 0.05f);
-	float2 view_lookup = float2(pow(dot(view_dir, rotate_x), power) + c_view_z_shift, t_roughness + c_roughness_shift);
-	
-	// bases: 0,2,3,6
-	float4 c_value= sample2D( g_sampler_cc0236, view_lookup ).SWIZZLE;
-	float4 d_value= sample2D( g_sampler_dd0236, view_lookup ).SWIZZLE;
-	
-	float4 quadratic_a, quadratic_b, sh_local;
-				
-	quadratic_a.xyz= rotate_z.yzx * rotate_z.xyz * (-SQRT3);
-	quadratic_b= float4(rotate_z.xyz * rotate_z.xyz, 1.0f/3.0f) * 0.5f * (-SQRT3);
-	
-	sh_local.xyz= sh_rotate_023(
-		0,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);
-	sh_local.w= 0.0f;
-
-	//c0236 dot L0236
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.r= dot( c_value, sh_local ); 
-	schlick_part.r= dot( d_value, sh_local );
-
-	sh_local.xyz= sh_rotate_023(
-		1,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);
-	sh_local.w= 0.0f;	
-	
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.g= dot( c_value, sh_local );
-	schlick_part.g= dot( d_value, sh_local );
-
-	sh_local.xyz= sh_rotate_023(
-		2,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);
-	sh_local.w= 0.0f;
-
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.b= dot( c_value, sh_local );
-	schlick_part.b= dot( d_value, sh_local );
-	schlick_part= schlick_part * 0.01f;
-}
-
-//quadratic area specularity
-void sh_glossy_ct_3(
-	in float3 view_dir,
-	in float3 rotate_z,
-	in float4 sh_0,
-	in float4 sh_312[3],
-	in float4 sh_457[3],
-	in float4 sh_8866[3],
-	in float roughness,
-	in float r_dot_l,
-	in float power,
-	out float3 specular_part,
-	out float3 schlick_part)
-{
-	//build the local frame
-	float3 rotate_x= normalize(view_dir - dot(view_dir, rotate_z) * rotate_z);		// view vector projected onto tangent plane
-	float3 rotate_y= cross(rotate_z, rotate_x);										// third one, 90 degrees  :)
-	
-	//local view
-	float t_roughness = roughness;
-	float2 view_lookup = float2(pow(dot(view_dir, rotate_x), power) + c_view_z_shift, t_roughness + c_roughness_shift);
-	
-	// bases: 0,2,3,6
-	float4 c_value= sample2D( g_sampler_cc0236, view_lookup ).SWIZZLE;
-	float4 d_value= sample2D( g_sampler_dd0236, view_lookup ).SWIZZLE;
-	
-	float4 quadratic_a, quadratic_b, sh_local;
-				
-	quadratic_a.xyz= rotate_z.yzx * rotate_z.xyz * (-SQRT3);
-	quadratic_b= float4(rotate_z.xyz * rotate_z.xyz, 1.0f/3.0f) * 0.5f * (-SQRT3);
-	
-	sh_local.xyz= sh_rotate_023(
-		0,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);
-	sh_local.w= dot(quadratic_a.xyz, sh_457[0].xyz) + dot(quadratic_b.xyzw, sh_8866[0].xyzw);
-
-	//c0236 dot L0236
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.r= dot( c_value, sh_local ); 
-	schlick_part.r= dot( d_value, sh_local );
-
-	sh_local.xyz= sh_rotate_023(
-		1,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);
-	sh_local.w= dot(quadratic_a.xyz, sh_457[1].xyz) + dot(quadratic_b.xyzw, sh_8866[1].xyzw);
-				
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.g= dot( c_value, sh_local );
-	schlick_part.g= dot( d_value, sh_local );
-
-	sh_local.xyz= sh_rotate_023(
-		2,
-		rotate_x,
-		rotate_z,
-		sh_0,
-		sh_312);	
-		
-	sh_local.w= dot(quadratic_a.xyz, sh_457[2].xyz) + dot(quadratic_b.xyzw, sh_8866[2].xyzw);
-		
-	sh_local*= float4(1.0f, r_dot_l, r_dot_l, r_dot_l);
-	specular_part.b= dot( c_value, sh_local );
-	schlick_part.b= dot( d_value, sh_local );
-
-	// basis - 7
-	c_value= sample2D( g_sampler_c78d78, view_lookup ).SWIZZLE;
-	quadratic_a.xyz = rotate_x.xyz * rotate_z.yzx + rotate_x.yzx * rotate_z.xyz;
-	quadratic_b.xyz = rotate_x.xyz * rotate_z.xyz;
-	sh_local.rgb= float3(dot(quadratic_a.xyz, sh_457[0].xyz) + dot(quadratic_b.xyz, sh_8866[0].xyz),
-						 dot(quadratic_a.xyz, sh_457[1].xyz) + dot(quadratic_b.xyz, sh_8866[1].xyz),
-						 dot(quadratic_a.xyz, sh_457[2].xyz) + dot(quadratic_b.xyz, sh_8866[2].xyz));
-	
-  
-	sh_local*= r_dot_l;
-	//c7 * L7
-	specular_part.rgb+= c_value.x*sh_local.rgb;
-	//d7 * L7
-	schlick_part.rgb+= c_value.z*sh_local.rgb;
-	
-		//basis - 8
-	quadratic_a.xyz = rotate_x.xyz * rotate_x.yzx - rotate_y.yzx * rotate_y.xyz;
-	quadratic_b.xyz = 0.5f*(rotate_x.xyz * rotate_x.xyz - rotate_y.xyz * rotate_y.xyz);
-	sh_local.rgb= float3(-dot(quadratic_a.xyz, sh_457[0].xyz) - dot(quadratic_b.xyz, sh_8866[0].xyz),
-		-dot(quadratic_a.xyz, sh_457[1].xyz) - dot(quadratic_b.xyz, sh_8866[1].xyz),
-		-dot(quadratic_a.xyz, sh_457[2].xyz) - dot(quadratic_b.xyz, sh_8866[2].xyz));
-	sh_local*= r_dot_l;
-	
-	//c8 * L8
-	specular_part.rgb+= c_value.y*sh_local.rgb;
-	//d8 * L8
-	schlick_part.rgb+= c_value.w*sh_local.rgb;
-	
-	schlick_part= schlick_part * 0.01f;
+float3 color_screen (float3 a, float3 b){
+    float3 white = float3(1.0,1.0,1.0);
+    return (white - (white-a)*(white-b));
 }
 
 float get_material_pbr_specular_power(float power_or_roughness)
@@ -259,32 +73,21 @@ float3 oren_nayar(
 	in float3 view_normal,
 	in float3 view_light_dir,
 	in float3 light_color,
-	in float3 f0,
-	in float2 texcoord,
+	in float3 fresnel,
+	in float  rough,
 	in float3 albedo
 )
 {
-	float3 metal_rough = saturate(sampleBiasGlobal2D(material_texture, transform_texcoord(texcoord, material_texture_xform)).xyz);
-	float rough = metal_rough.y;
-	float pi = 3.14159265358979323846264338327950;
+    float NoL = max(dot(view_normal, view_light_dir), 0.0); 
+	float NoV = max(dot(view_normal, view_dir), _epsilon);
+	float LoV = max(dot(view_light_dir, view_dir), 0.0);
 
-    float H = normalize(view_light_dir + view_dir);
-    float NoL = dot(view_normal, view_light_dir); 
-	float NoV = dot(view_normal, view_dir);
-	float LoV = dot(view_light_dir, view_dir);
-    float HoV = saturate(dot(H, view_dir));
-
-    float albedo_standin = 0.96;
-
-    float s = LoV - NoL * NoV;
-    float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
-
-    float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
-    float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
-    float B = 0.45 * sigma2 / (sigma2 + 0.09);
-
-
-    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / pi) * albedo;
+	float ON_a2 = rough * rough;
+	float s = LoV - NoL * NoV;
+	float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
+	float3 A		= 1 + ON_a2 * (-0.5 / (ON_a2 + 0.33) + 0.17 * albedo / (ON_a2 + 0.13));
+	float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
+	float3 ONdif =  albedo * (1 - fresnel) * (A + B * s / t) * (1 / PI) * light_color * NoL;
 
 	return ONdif;
 }
@@ -296,9 +99,11 @@ float3 oren_nayar_and_sh(
 	in float3 light_color,
 	in float rough,
 	in float4 sh_lighting_coefficients[10],
-	in float3 f0)
+	in float3 albedo,
+	in float3x3 tangent_frame,
+	in float3 fresnel)
 {
-	float pi = 3.14159265358979323846264338327950;
+
 
 /*
 	float3 H     = normalize(view_light_dir + view_dir);
@@ -321,14 +126,6 @@ float3 oren_nayar_and_sh(
 
 	float3 ONdif = (1 - fresnel_analytical) * max(ON, 0.0) * light_color;*/
 
-
-
-    float H = normalize(view_light_dir + view_dir);
-    float NoL = dot(view_normal, view_light_dir); 
-	float NoV = dot(view_normal, view_dir);
-	float LoV = dot(view_light_dir, view_dir);
-    float HoV = saturate(dot(H, view_dir));
-
     //wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
     /*
     The github this function is pulled from (https://github.com/glslify/glsl-diffuse-oren-nayar) states that values for the float below above 0.96
@@ -337,7 +134,7 @@ float3 oren_nayar_and_sh(
     I may need to use this for more than just diffuse, so this will be left as 1.0 and we can multiply the function's output by the albedo map and
     then (1 - Fresnel) to maintain energy conservation.
     */
-
+/*
     float albedo_standin = 0.96;
 
     float s = LoV - NoL * NoV;
@@ -348,8 +145,15 @@ float3 oren_nayar_and_sh(
     float B = 0.45 * sigma2 / (sigma2 + 0.09);
 
 
-    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / pi);
-
+    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / PI);
+*/
+//	float LoH = dot(view_light_dir, H);
+/*	float ON_a2 = rough * rough;
+	float s = LoV - NoL * NoV;
+	float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
+	float3 A		= 1 + ON_a2 * (-0.5 / (ON_a2 + 0.33) + 0.17 * albedo / (ON_a2 + 0.13));
+	float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);*/
+	float3 ONdif = oren_nayar(view_dir, view_normal, view_light_dir, light_color, fresnel, rough, albedo);
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);
 	float4 lighting_constants[4] = {
@@ -370,8 +174,8 @@ float3 oren_nayar_and_sh(
 	float c1 = 0.429043f;
 	float c2 = 0.511664f;
 	float c4 = 0.886227f;
-	float3 lightprobe_color = (c4 * lighting_constants[0].rgb + (-2.f * c2) * x1) / pi;
-	return ONdif + lightprobe_color;
+	float3 lightprobe_color = (c4 * lighting_constants[0].rgb + (-2.f * c2) * x1) / PI;
+	return ONdif + lightprobe_color * albedo;
 }
 
 void calc_material_analytic_specular_pbr_ps(
@@ -390,7 +194,6 @@ void calc_material_analytic_specular_pbr_ps(
 	out float3 specular_albedo_color,						// specular reflectance at normal incidence
 	out float3 analytic_specular_radiance)					// return specular radiance from this light				<--- ONLY REQUIRED OUTPUT FOR DYNAMIC LIGHTS
 {
-    float pi = 3.14159265358979323846264338327950;
 	material_parameters= saturate(sampleBiasGlobal2D(material_texture, transform_texcoord(texcoord, material_texture_xform)));
 
 	//Should probably make different material models for each of these conditions to avoid dumb if statements
@@ -427,7 +230,15 @@ void calc_material_analytic_specular_pbr_ps(
 	float3 F;
 	float3 f0 = use_specular_tints ? lerp(normal_specular, diffuse_albedo_color, albedo_blend) : lerp(float3(0.04, 0.04, 0.04), diffuse_albedo_color, material_parameters.z);
 	specular_albedo_color = f0;
-	float3 f1 = use_specular_tints ? glancing_specular : 1;
+	float3 f1;
+	if(chameleon)
+	{
+		f1 = use_specular_tints ? lerp(1, glancing_specular, misc.x) : 1;
+	}else
+	{
+		f1 = use_specular_tints ? glancing_specular : 1;
+	}
+
 	float fresnel_blend;
 	if(use_specular_tints)
 	{
@@ -444,7 +255,7 @@ void calc_material_analytic_specular_pbr_ps(
 
     //Normal Distribution Function
     float NDFdenom = max((NdotH * a2_sqrd - NdotH) * NdotH + 1.0, 0.0001);
-    float NDF = a2_sqrd / (pi * NDFdenom * NDFdenom);
+    float NDF = a2_sqrd / (PI * NDFdenom * NDFdenom);
 
     //Geometry
     float L = 2.0 * NdotL / (NdotL + sqrt(a2_sqrd + (1.0 - a2_sqrd) * (NdotL * NdotL)));
@@ -495,8 +306,6 @@ void calc_material_pbr_ps(
 	inout float3 diffuse_radiance)
 {
 	float3 fragment_position_world= Camera_Position_PS - fragment_to_camera_world;
-
-		float pi = 3.14159265358979323846264338327950;
 	
 		float3 fresnel_analytical;			// fresnel_specular_albedo
 		float3 effective_reflectance;		// specular_albedo (no fresnel)
@@ -527,20 +336,21 @@ void calc_material_pbr_ps(
 
 	float3 area_specular;
 	float3 NdotV = saturate(dot(surface_normal, view_dir));
-	float3 f0 = effective_reflectance;
-	float3 f1 = use_specular_tints ? glancing_specular : 1;
 	float gloss = 1 - rough;
-	float fresnel_power = use_specular_tints ? fresnel_curve_steepness : 5;
-	float3 fRough;
-	if (use_specular_tints)
+	float3 f0 = effective_reflectance;
+	float3 f1;
+	if(chameleon)
 	{
-		fRough = f0 + (f1 - f0) * pow(1.0 - NdotV, fresnel_power);
-	}
-	else
+		f1 = use_specular_tints ? lerp(max(gloss, f0), max(gloss, glancing_specular), specular_mask) : max(gloss, f0);
+	}else
 	{
-		fRough = f0 + (max(gloss, f0) - f0) * pow(1.0 - NdotV, fresnel_power);
+		f1 = use_specular_tints ? glancing_specular : max(gloss, f0);
 	}
 
+	float fresnel_power = use_specular_tints ? fresnel_curve_steepness : 5;
+	float3 fRough = f0 + (f1 - f0) * pow(1.0 - NdotV, fresnel_power);
+
+	f1 = use_specular_tints ? glancing_specular : 1;
 	float3 simple_light_diffuse_light;
 	float3 simple_light_specular_light;
 	if (!no_dynamic_lights)
@@ -567,7 +377,7 @@ void calc_material_pbr_ps(
 
 	
 	envmap_specular_reflectance_and_roughness= float4(EnvBRDFApprox(fRough, rough, NdotV) * (diffuse_radiance), rough);
-	envmap_area_specular_only = prt_ravi_diff.z * cubemap_or_area_specular;
+	envmap_area_specular_only = prt_ravi_diff.z * spatially_varying_material_parameters.x;
 
 	diffuse_radiance = oren_nayar_and_sh(
 							view_dir,
@@ -576,14 +386,21 @@ void calc_material_pbr_ps(
 							analytical_light_intensity,
 							rough,
 							sh_lighting_coefficients,
+							diffuse_reflectance,
+							tangent_frame,
 							fresnel_analytical);
 
-	diffuse_radiance= (diffuse_radiance + simple_light_diffuse_light) * prt_ravi_diff.x;
+	//float ao_vert = 1 - ((1 - spatially_varying_material_parameters.x) * (1 - prt_ravi_diff.x));
+	diffuse_radiance= (diffuse_radiance + simple_light_diffuse_light) * prt_ravi_diff.x * (1 - metallic);
 		
-	specular_radiance.xyz= (simple_light_specular_light + specular_analytical /*+ (envmap_specular_reflectance_and_roughness.rgb * (1 - cubemap_or_area_specular))*/) * prt_ravi_diff.z;//EnvBRDFApprox(fRough, rough, NdotV)
+	specular_radiance.xyz= (simple_light_specular_light + specular_analytical) * prt_ravi_diff.z;//EnvBRDFApprox(fRough, rough, NdotV)
 	
 	specular_radiance.w= 0.0f;
-	diffuse_radiance *= (1 - metallic);
+	//diffuse_radiance = 0.0f;
+
+	//diffuse_radiance = diffuse_reflectance;
+	//specular_radiance.xyz = 0.00001f;
+	//envmap_specular_reflectance_and_roughness= 0.0f;
 }
 	//Look into setting up the normal map here so you don't have Halo 3's weird Zbump bullshit.
 #endif // _pbr_FX_

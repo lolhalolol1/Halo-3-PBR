@@ -20,8 +20,7 @@ float3 get_constant_analytical_light_dir_vs()
  	return -normalize(v_lighting_constant_1.xyz + v_lighting_constant_2.xyz + v_lighting_constant_3.xyz);		// ###ctchou $PERF : pass this in as a constant
 }
 
-
-void get_albedo_and_normal(out float3 bump_normal, out float4 albedo, in float3 texcoord, in float3x3 tangent_frame, in float3 fragment_to_camera_world, in float2 fragment_position, in float4 misc)
+void get_albedo_and_normal(out float3 bump_normal, out float4 albedo, in float3 texcoord, in float3x3 tangent_frame, in float3 fragment_to_camera_world, in float2 fragment_position,in float4 misc)
 {
 #ifdef maybe_calc_albedo
 	if (actually_calc_albedo)					// transparent objects must generate their own albedo + normal
@@ -120,8 +119,9 @@ albedo_pixel albedo_ps(
 	
 	// compute parallax
 	float2 texcoord;
-	calc_parallax_ps(vsout.texcoord, view_dir_in_tangent_space, texcoord);
 
+	calc_parallax_ps(vsout.texcoord, view_dir_in_tangent_space, texcoord);
+	
 	float output_alpha;
 	// do alpha test
 	calc_alpha_test_ps(texcoord, output_alpha);
@@ -186,9 +186,8 @@ float4 calc_output_color_with_explicit_light_quadratic(
 
 	// get diffuse albedo, specular mask and bump normal
 	float3 bump_normal;
-	float4 albedo;	
+	float4 albedo;
 	get_albedo_and_normal(bump_normal, albedo, float3(texcoord, original_texcoord.z), tangent_frame, fragment_to_camera_world, fragment_position, misc);
-	
 	// compute a blended normal attenuation factor from the length squared of the normal vector
 	// blended normal pixels are MSAA pixels that contained normal samples from two different polygons, therefore the lerped vector upon resolve does not have a length of 1.0
 	float normal_lengthsq= dot(bump_normal.xyz, bump_normal.xyz);
@@ -205,6 +204,61 @@ float4 calc_output_color_with_explicit_light_quadratic(
 	
 	// calculate view reflection direction (in world space of course)
 	float view_dot_normal=	dot(view_dir, bump_normal);
+
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss || MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
+	float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
+	float3 temp_albedo;
+	if(chameleon)
+	{
+		float3 fresnel_color = 0;
+		//float3 view = shader_data.common.view_dir_distance.xyz;
+		
+            
+		float3  rim_fresnel = pow(fresnel, rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= rim_colour;
+        mid_fresnel *= mid_colour;
+        frt_fresnel *= front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+
+	#ifdef _PBR_FX_
+		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
+	#else
+		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+	}
+	if(use_mask_material && mask_chameleon)
+	{  
+		float3 fresnel_color = 0;
+		float3  rim_fresnel = pow(fresnel, mask_rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mask_mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, mask_front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= mask_rim_colour;
+        mid_fresnel *= mask_mid_colour;
+        frt_fresnel *= mask_front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
+	}
+	else
+	{
+		albedo.xyz = temp_albedo;
+	#endif
+	}
+#endif
 	///  DESC: 18 7 2007   12:50 BUNGIE\yaohhu :
 	///    We don't need to normalize view_reflect_dir, as long as bump_normal and view_dir have been normalized
 	/// float3 view_reflect_dir= normalize( (view_dot_normal * bump_normal - view_dir) * 2 + view_dir );
@@ -256,12 +310,20 @@ float4 calc_output_color_with_explicit_light_quadratic(
 	out_color.xyz= out_color.xyz * BLEND_MULTIPLICATIVE;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
 #elif defined(BLEND_FRESNEL)
-	out_color.xyz= (diffuse_radiance * albedo.xyz * albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
+	out_color.xyz= (diffuse_radiance
+					#ifndef _PBR_FX_ 
+					* albedo.xyz 
+					#endif
+					* albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= saturate(specular_radiance.w + albedo.w);
 #else
-	out_color.xyz= (diffuse_radiance * albedo.xyz + specular_radiance + self_illum_radiance + envmap_radiance);
+	out_color.xyz= (diffuse_radiance
+					#ifndef _PBR_FX_ 
+					* albedo.xyz 
+					#endif
+					+ specular_radiance + self_illum_radiance + envmap_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
@@ -301,7 +363,7 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 
 	// get diffuse albedo, specular mask and bump normal
 	float3 bump_normal;
-	float4 albedo;	
+	float4 albedo;
 	get_albedo_and_normal(bump_normal, albedo, float3(texcoord, original_texcoord.z), tangent_frame, fragment_to_camera_world, fragment_position, misc);
 	
 	// compute a blended normal attenuation factor from the length squared of the normal vector
@@ -337,6 +399,60 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 
 	// calculate view reflection direction (in world space of course)
 	float view_dot_normal=	dot(view_dir, bump_normal);
+
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss || MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
+	float fresnel = 1 - clamp(view_dot_normal, 0.0001, 1);
+	float3 temp_albedo;
+	if(chameleon)
+	{
+		float3 fresnel_color = 0;
+            
+		float3  rim_fresnel = pow(fresnel, rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= rim_colour;
+        mid_fresnel *= mid_colour;
+        frt_fresnel *= front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+
+	#ifdef _PBR_FX_
+		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
+	#else
+		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+	}
+	if(use_mask_material && mask_chameleon)
+	{  
+		float3 fresnel_color = 0;
+		float3  rim_fresnel = pow(fresnel, mask_rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mask_mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, mask_front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= mask_rim_colour;
+        mid_fresnel *= mask_mid_colour;
+        frt_fresnel *= mask_front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
+	}
+	else
+	{
+		albedo.xyz = temp_albedo;
+	#endif
+	}
+#endif
+	
 	///  DESC: 18 7 2007   12:50 BUNGIE\yaohhu :
 	///    We don't need to normalize view_reflect_dir, as long as bump_normal and view_dir have been normalized
 	/// float3 view_reflect_dir= normalize( (view_dot_normal * bump_normal - view_dir) * 2 + view_dir );
@@ -398,12 +514,20 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 	out_color.xyz= out_color.xyz * BLEND_MULTIPLICATIVE;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
 #elif defined(BLEND_FRESNEL)
-	out_color.xyz= (diffuse_radiance * albedo.xyz * albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
+	out_color.xyz= (diffuse_radiance 
+					#ifndef _PBR_FX_ 
+					* albedo.xyz
+					#endif
+					* albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= saturate(specular_radiance.w + albedo.w);
 #else
-	out_color.xyz= (diffuse_radiance * albedo.xyz + specular_radiance + self_illum_radiance + envmap_radiance);
+	out_color.xyz= (diffuse_radiance 
+					#ifndef _PBR_FX_ 
+					* albedo.xyz 
+					#endif
+					+ specular_radiance + self_illum_radiance + envmap_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
@@ -459,7 +583,7 @@ static_per_pixel_vsout static_per_pixel_vs(
 
 	// world space direction to eye/camera
 	vsout.fragment_to_camera_world = Camera_Position - vertex.position;
-
+	
 	compute_scattering(Camera_Position, vertex.position, vsout.extinction, vsout.inscatter);
 	
 	vsout.clip_distance = dot(vsout.position, v_clip_plane);
@@ -528,7 +652,7 @@ struct static_sh_vsout
 	float clip_distance				: SV_ClipDistance;
 	float4 texcoord_and_vertexNdotL	: TEXCOORD0;
 	float3 normal					: TEXCOORD3;
-	float3 binormal					: TEXCOORD4;
+	float3 binormal					: TEXCOORD4; 
 	float3 tangent					: TEXCOORD5;
 	float3 fragment_to_camera_world	: TEXCOORD6;
 	float3 extinction				: COLOR0;
@@ -615,6 +739,7 @@ accum_pixel static_sh_ps(
 	float4 prt_ravi_diff= float4(1.0f, 0.0f, 1.0f, dot(tangent_frame[2], k_ps_dominant_light_direction));
 	float4 out_color= calc_output_color_with_explicit_light_quadratic(
 		vsout.position.xy,
+
 		tangent_frame,
 		sh_lighting_coefficients,
 		vsout.fragment_to_camera_world,
@@ -1319,6 +1444,7 @@ accum_pixel default_dynamic_light_ps(
 	float4 albedo;	
 	get_albedo_and_normal(bump_normal, albedo, float3(texcoord,vsout.texcoord.z), tangent_frame, vsout.fragment_to_camera_world, vsout.position.xy, misc);
 
+
 	// calculate view reflection direction (in world space of course)
 	///  DESC: 18 7 2007   12:50 BUNGIE\yaohhu :
 	///    We don't need to normalize view_reflect_dir, as long as bump_normal and view_dir have been normalized
@@ -1326,6 +1452,61 @@ accum_pixel default_dynamic_light_ps(
 	///float3 view_reflect_dir= normalize( (dot(view_dir, bump_normal) * bump_normal - view_dir) * 2 + view_dir );
 	float3 view_reflect_dir= -normalize(reflect(view_dir, bump_normal));
 
+	float specular_mask;
+	calc_specular_mask_ps(texcoord, albedo.w, specular_mask);
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss) || (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
+	float3 temp_albedo;
+	float view_dot_normal = clamp(dot(bump_normal, view_dir), 0.0001, 1);
+	float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
+	if(chameleon)
+	{
+
+		float3 fresnel_color = 0;
+		//float3 view = shader_data.common.view_dir_distance.xyz;
+		float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
+            
+		float3  rim_fresnel = pow(fresnel, rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= rim_colour;
+        mid_fresnel *= mid_colour;
+        frt_fresnel *= front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+	#ifdef _PBR_FX_
+		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
+	#else
+		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+	}
+	if(use_mask_material && mask_chameleon)
+	{  
+		float3 fresnel_color = 0;
+
+		float3  rim_fresnel = pow(fresnel, mask_rim_power * 5);
+		float3  mid_fresnel = pow(fresnel, mask_mid_power * 5);
+		float3  frt_fresnel = pow(1-fresnel, mask_front_power * 5);
+		
+
+		mid_fresnel *= 1-rim_fresnel;
+		frt_fresnel *= 1-mid_fresnel;
+
+		rim_fresnel *= mask_rim_colour;
+        mid_fresnel *= mask_mid_colour;
+        frt_fresnel *= mask_front_colour;
+
+		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+		fresnel_color = color_screen(fresnel_color, frt_fresnel);
+		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
+
+	#endif
+	}
+#endif
 
 //PBR SHADER MOD: 	The #ifdef is here to make dynamic lights use the PBR material model without the "unproven 'performance' hack" that'd replace it all with
 //					just the vanilla diffuse lobe in certain cases, but without removing it for the sake of keeping vanilla logic intact for default shaders.			
@@ -1359,13 +1540,13 @@ accum_pixel default_dynamic_light_ps(
 								fragment_to_light,
 								light_radiance,
 								specular_fresnel_color,
-								texcoord,
+								spatially_varying_material_parameters.y,
 								albedo
-								) * albedo * (1 - spatially_varying_material_parameters.z);
+								) * (1 - spatially_varying_material_parameters.z);
 	radiance += analytic_specular_radiance;
 
 #else
-#ifdef _PBR_SPEC_GLOSS_FX_
+#if MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss
 	float3 specular_fresnel_color;
 	float3 specular_albedo_color;
 	float power_or_roughness;
@@ -1410,8 +1591,6 @@ accum_pixel default_dynamic_light_ps(
 	#endif	
 
 		// calculate specular lobe
-		float specular_mask;
-		calc_specular_mask_ps(texcoord, albedo.w, specular_mask);
 
 		float3 specular_multiplier= GET_MATERIAL_ANALYTICAL_SPECULAR_MULTIPLIER(material_type)(specular_mask);
 		
