@@ -274,8 +274,6 @@ float4 calc_detail(
    }
 }
 
-#define _epsilon 0.00001f
-
 void calc_phong_outgoing_light(
 	// geometric parameters in world space
 	in float3	normal_dir,
@@ -362,30 +360,6 @@ void calc_ggx_outgoing_light(
 	analytical_specular_light = (NdotV != 0.0f) ? ((NDF * f * G) / max(4.0 * NdotV * NdotL, 0.0001)) * analytical_light_color * NdotL : 0.00001f;
 }
 
-float3 oren_nayar(
-	in float3 view_dir,
-	in float3 view_normal,
-	in float3 view_light_dir,
-	in float3 light_color,
-	in float3 fresnel,
-	in float  rough,
-	in float3 albedo
-)
-{
-    float NoL = max(dot(view_normal, view_light_dir), 0.0); 
-	float NoV = max(dot(view_normal, view_dir), _epsilon);
-	float LoV = max(dot(view_light_dir, view_dir), 0.0);
-
-	float ON_a2 = rough * rough;
-	float s = LoV - NoL * NoV;
-	float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
-	float3 on_A		= 1 + ON_a2 * (-0.5 / (ON_a2 + 0.33) + 0.17 * albedo / (ON_a2 + 0.13));
-	float on_B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
-	float3 ONdif =  albedo * (1 - fresnel) * (on_A + on_B * s / t) * (1 / pi) * light_color * NoL;
-
-	return ONdif;
-}
-
 float3 lambert_and_sh(
 	in float3 albedo,
 	in float3 view_dir,
@@ -397,7 +371,21 @@ float3 lambert_and_sh(
 	in float3 fresnel,
 	out float3 sh_spec_scalar)
 {
-	float3 ON = oren_nayar(view_dir, view_normal, view_light_dir, light_color, fresnel, rough, albedo);
+	//float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float3 H = normalize(view_light_dir + view_dir);
+    float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float NdotV = saturate(dot(view_normal, view_dir));
+	float HdotV = saturate(dot(view_dir, H));
+	float LdotV = saturate(dot(view_light_dir, view_dir));
+			//NdotL = NdotL <= 0.01 ? 0.0001 : ceil(NdotL * 2) / 2;
+
+	float s = LdotV - NdotL * NdotV;
+	float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
+	float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+	float3 on_A = 1.0 + sigma2 * (albedo / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+	float on_B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+    float3 ON = albedo * (1 - fresnel) * (1 / pi) * saturate(on_A + on_B * s / t) * NdotL * light_color;
 	//float3 ON = NdotL * (1 / pi) * (1 - fresnel);
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);
@@ -439,7 +427,22 @@ float3 lambert_and_sh_order2(
 	in float3 fresnel,
 	out float3 sh_spec_scalar)
 {
-	float3 ON = oren_nayar(view_dir, view_normal, view_light_dir, light_color, fresnel, rough, albedo);
+	//float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float3 H = normalize(view_light_dir + view_dir);
+    float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float NdotV = saturate(dot(view_normal, view_dir));
+	float HdotV = saturate(dot(view_dir, H));
+	float LdotV = saturate(dot(view_light_dir, view_dir));
+			//NdotL = NdotL <= 0.01 ? 0.0001 : ceil(NdotL * 2) / 2;
+
+	float s = LdotV - NdotL * NdotV;
+	float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
+	float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+	float3 on_A = 1.0 + sigma2 * (albedo / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+	float on_B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+    float3 ON = albedo * (1 - fresnel) * (1 / pi) * saturate(on_A + on_B * s / t) * NdotL * light_color;
+	//float3 ON = NdotL * (1 / pi) * (1 - fresnel);
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);
 	float4 lighting_constants[4] = {
@@ -467,7 +470,32 @@ float3 lambert_and_sh_order2(
 	sh_spec_scalar = lightprobe_color * ao;
 	return ON + lightprobe_color * albedo;
 }
+float3 oren_nayar(
+	in float3 albedo,
+	in float3 view_dir,
+	in float3 view_normal,
+	in float3 view_light_dir,
+	in float3 light_color,
+	in float rough,
+	in float3 fresnel)
+{
+	//float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float3 H = normalize(view_light_dir + view_dir);
+    float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
+	float NdotV = saturate(dot(view_normal, view_dir));
+	float HdotV = saturate(dot(view_dir, H));
+	float LdotV = saturate(dot(view_light_dir, view_dir));
+			//NdotL = NdotL <= 0.01 ? 0.0001 : ceil(NdotL * 2) / 2;
 
+	float s = LdotV - NdotL * NdotV;
+	float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
+	float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+	float3 on_A = 1.0 + sigma2 * (albedo / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+	float on_B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+    float3 ON = (albedo * (1 - fresnel) / pi) * saturate(on_A + on_B * s / t) * NdotL * light_color;
+	return ON;
+}
 
 float3 on_and_sh_order2(
 	in float3 albedo,
@@ -949,6 +977,7 @@ void blend_specular_parameters(
 	specular.weight					+= blend_amount;
 }
 
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 void blend_specular_parameters_pbr(
 	in float blend_amount,
 	in float3 albedo,
@@ -971,6 +1000,7 @@ void blend_specular_parameters_pbr(
 	specular.fresnel_steepness		= fresnel_steepness;
 	specular.weight					= blend_amount;
 }
+#endif
 
 #define BLEND_SELF_ILLUM(material_number, texcoord)						\
 	blend_self_illum(													\
@@ -1009,7 +1039,9 @@ void blend_surface_parameters(
 	in float4 albedo,
 	out float diffuse_coefficient,
 	out specular_parameters specular,
+	#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 	out specular_parameters_pbr specular_pbr,
+	#endif
 	out float3 self_illum)
 {
 	// calculate blended normal and diffuse coefficient
@@ -1175,7 +1207,9 @@ accum_pixel static_lighting_shared_ps_quadratic(
 	// calculate blended surface parameters
 	float diffuse_coefficient;
 	specular_parameters specular;
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 	specular_parameters_pbr specular_pbr;
+#endif
 	float3 self_illum;
 	float4 albedo = albedo_texture.Load(int3(fragment_position.xy, 0));
 	blend_surface_parameters(
@@ -1184,7 +1218,9 @@ accum_pixel static_lighting_shared_ps_quadratic(
 		albedo,
 		diffuse_coefficient,
 		specular,
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 		specular_pbr,
+#endif
 		self_illum);
 
 	// normalize interpolated values
@@ -1285,12 +1321,6 @@ accum_pixel static_lighting_shared_ps_quadratic(
 										specular_sh
 										);
 
-		// calculate full specular tint
-	    //float3 f0= specular_pbr.f0;
-
-		//area_specular_light= ravi_order_3(view_reflect_dir, sh_lighting_coefficients);//ravi_order_3(view_reflect_dir, sh_lighting_coefficients);
-		//area_specular_light= max(0.0f, area_specular_light);
-
 		float3 Fresnel_Gloss_env	= f0 + (max(1 - roughness, f0) - f0) * pow(1.0f - n_dot_v, 5.0f);
 		float3 Fresnel_F90_env		= f0 + (f90 - f0) * pow(1.0f - n_dot_v, specular_pbr.fresnel_steepness);
 		specular_tint				= lerp(Fresnel_Gloss_env, Fresnel_F90_env, iridescent);
@@ -1381,7 +1411,9 @@ accum_pixel static_lighting_shared_ps_linear_with_dominant_light(
 	// calculate blended surface parameters
 	float diffuse_coefficient;
 	specular_parameters specular;
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 	specular_parameters_pbr specular_pbr;
+#endif
 	float3 self_illum;
 	float4 albedo = albedo_texture.Load(int3(fragment_position.xy, 0));
 	blend_surface_parameters(
@@ -1390,7 +1422,9 @@ accum_pixel static_lighting_shared_ps_linear_with_dominant_light(
 		albedo,
 		diffuse_coefficient,
 		specular,
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 		specular_pbr,
+#endif
 		self_illum);
 
 	// normalize interpolated values
@@ -1489,9 +1523,6 @@ accum_pixel static_lighting_shared_ps_linear_with_dominant_light(
 										fresnel_analytical,
 										specular_sh
 										);
-
-		// calculate full specular tint
-	    //float3 f0= specular_pbr.f0;
 
 		float3 Fresnel_Gloss_env	= f0 + (max(1 - roughness, f0) - f0) * pow(1.0f - n_dot_v, 5.0f);
 		float3 Fresnel_F90_env		= f0 + (f90 - f0) * pow(1.0f - n_dot_v, specular_pbr.fresnel_steepness);
@@ -2096,7 +2127,9 @@ accum_pixel default_dynamic_light_ps(
 		diffuse_albedo,	
 		diffuse_coefficient,
 		specular,
+#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 		specular_pbr,
+#endif
 		self_illum);
 
 	// normalize interpolated values
@@ -2143,7 +2176,11 @@ accum_pixel default_dynamic_light_ps(
 
 
 
+		// calculate view reflection direction (in world space of course)
+		float3 view_reflect_dir= normalize( (dot(view_dir, bump_normal) * bump_normal - view_dir) * 2 + view_dir );
 
+		// calculate diffuse lobe
+		analytic_diffuse_radiance= light_radiance * dot(fragment_to_light, bump_normal) * diffuse_albedo.rgb;
 		
 		#if MORPH_DYNAMIC(blend_type) == MORPH_pbr
 
@@ -2151,7 +2188,6 @@ accum_pixel default_dynamic_light_ps(
 			float3 f0			= specular_pbr.f0;
 			float3 f90			= specular_pbr.f90;
 			float3 iridescent	= specular_pbr.iridescent;
-
 
 			float3 fresnel_analytical = 0.0f;
 			calc_ggx_outgoing_light(
@@ -2167,18 +2203,11 @@ accum_pixel default_dynamic_light_ps(
 				fresnel_analytical,
 				analytic_specular_radiance);
 
-			analytic_diffuse_radiance= oren_nayar(view_dir, bump_normal, fragment_to_light, light_radiance, fresnel_analytical, roughness, diffuse_albedo.rgb) * (1 - specular_pbr.metallic);
 			// calculate full specular tint
 			//float3 f0= specular_pbr.f0;
 			float3 specular_sh = 0.0f;
+			analytic_diffuse_radiance *= (1 - fresnel_analytical) * (1 - specular_pbr.metallic);
 		#else
-
-			// calculate diffuse lobe
-			analytic_diffuse_radiance= light_radiance * dot(fragment_to_light, bump_normal) * diffuse_albedo.rgb;
-
-			// calculate view reflection direction (in world space of course)
-			float3 view_reflect_dir= normalize( (dot(view_dir, bump_normal) * bump_normal - view_dir) * 2 + view_dir );
-
 			calc_phong_outgoing_light(
 				bump_normal,
 				view_dir,
