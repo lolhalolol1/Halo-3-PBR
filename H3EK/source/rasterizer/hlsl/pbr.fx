@@ -92,6 +92,36 @@ float3 oren_nayar(
 	return ONdif;
 }
 
+void chameleon_pbr(
+	in float3 view_dir,
+	in float3 bump_normal,
+	in float chameleon_mask,
+	inout float3 albedo)
+{
+	float3 temp_albedo;
+	float view_dot_normal = clamp(dot(bump_normal, view_dir), 0.0001, 1);
+	float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
+
+	float3 fresnel_color = 0;
+		
+	float3  rim_fresnel = pow(fresnel, rim_power * 5);
+	float3  mid_fresnel = pow(fresnel, mid_power * 5);
+	float3  frt_fresnel = pow(1-fresnel, front_power * 5);
+	
+
+	mid_fresnel *= 1-rim_fresnel;
+	frt_fresnel *= 1-mid_fresnel;
+
+	rim_fresnel *= rim_colour;
+	mid_fresnel *= mid_colour;
+	frt_fresnel *= front_colour;
+
+	fresnel_color = color_screen(rim_fresnel, mid_fresnel);
+	fresnel_color = color_screen(fresnel_color, frt_fresnel);
+
+	albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, chameleon_mask);
+}
+
 float3 oren_nayar_and_sh(
 	in float3 view_dir,
 	in float3 view_normal,
@@ -103,56 +133,6 @@ float3 oren_nayar_and_sh(
 	in float3x3 tangent_frame,
 	in float3 fresnel)
 {
-
-
-/*
-	float3 H     = normalize(view_light_dir + view_dir);
-	float  NdotL = clamp(dot(view_normal, view_light_dir), 0.0001, 1.0);
-	float  NdotV = saturate(dot(view_normal, view_dir));
-	float  LdotH = clamp(dot(view_light_dir, H), 0.0001, 1.0);
-	float  VdotH = clamp(dot(view_dir, H), 0.0001, 1.0);
-	float  VdotL = clamp(dot(view_dir, view_light_dir), 0.0001, 1.0);
-	float  NdotH = clamp(dot(view_normal, H), 0.0001, 1.0);
-	float  min_dot = min(NdotL, NdotV);
-
-	float ON_a2 = (1 / sqrt(2)) * atan(rough * rough);//DICE paper's method for roughness conversion
-	float A		= 1 + -0.5 * ON_a2 / (ON_a2 + 0.33);
-	float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
-	float C		= 1 / max(NdotL, NdotV);
-
-	float somethin 	= max(VdotL - NdotL * NdotV, 0);
-
-	float3 ON	= NdotL * (1 / pi) * (A + B * somethin * C);
-
-	float3 ONdif = (1 - fresnel_analytical) * max(ON, 0.0) * light_color;*/
-
-    //wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
-    /*
-    The github this function is pulled from (https://github.com/glslify/glsl-diffuse-oren-nayar) states that values for the float below above 0.96
-    will not be energy conserving. This is because the output of this function is intended to be multiplied by albedo afterwards for the final diffuse.
-
-    I may need to use this for more than just diffuse, so this will be left as 1.0 and we can multiply the function's output by the albedo map and
-    then (1 - Fresnel) to maintain energy conservation.
-    */
-/*
-    float albedo_standin = 0.96;
-
-    float s = LoV - NoL * NoV;
-    float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
-
-    float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
-    float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
-    float B = 0.45 * sigma2 / (sigma2 + 0.09);
-
-
-    float3 ONdif = (albedo_standin * max(0.0, NoL) * saturate(A + B * s / t) * light_color / PI);
-*/
-//	float LoH = dot(view_light_dir, H);
-/*	float ON_a2 = rough * rough;
-	float s = LoV - NoL * NoV;
-	float t = lerp(1.0, max(NoL, NoV), step(0.0, s));
-	float3 A		= 1 + ON_a2 * (-0.5 / (ON_a2 + 0.33) + 0.17 * albedo / (ON_a2 + 0.13));
-	float B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);*/
 	float3 ONdif = oren_nayar(view_dir, view_normal, view_light_dir, light_color, fresnel, rough, albedo);
 	//Crackhead attempt at redoing spherical harmonics
 	float3 dir_eval= float3(-0.4886025f * view_light_dir.y, -0.4886025f * view_light_dir.z, -0.4886025 * view_light_dir.x);
@@ -184,7 +164,7 @@ void calc_material_analytic_specular_pbr_ps(
 	in float3 view_reflect_dir,								// view_dir reflected about surface normal, in world space
 	in float3 light_dir,									// fragment to light, in world space
 	in float3 light_irradiance,								// light intensity at fragment; i.e. light_color
-	in float3 diffuse_albedo_color,							// diffuse reflectance (ignored for cook-torrance)
+	inout float3 diffuse_albedo_color,							// diffuse reflectance (ignored for cook-torrance)
 	in float2 texcoord,
 	in float vert_n_dot_l,
 	in float3 surface_normal,
@@ -217,6 +197,10 @@ void calc_material_analytic_specular_pbr_ps(
 			material_parameters.z = metallic_bias;
 		}
 	}
+	if(chameleon)
+	{
+		chameleon_pbr(view_dir, normal_dir, material_parameters.w, diffuse_albedo_color);
+	}
     float3 H    = normalize(light_dir + view_dir);
     float NdotL = clamp(dot(normal_dir, light_dir), 0.0001, 1.0);
 	float NdotV = clamp(abs(dot(normal_dir, view_dir)), 0.0001, 1.0);
@@ -234,7 +218,8 @@ void calc_material_analytic_specular_pbr_ps(
 	if(chameleon)
 	{
 		f1 = use_specular_tints ? lerp(1, glancing_specular, misc.x) : 1;
-	}else
+	}
+	else
 	{
 		f1 = use_specular_tints ? glancing_specular : 1;
 	}
@@ -307,31 +292,31 @@ void calc_material_pbr_ps(
 {
 	float3 fragment_position_world= Camera_Position_PS - fragment_to_camera_world;
 	
-		float3 fresnel_analytical;			// fresnel_specular_albedo
-		float3 effective_reflectance;		// specular_albedo (no fresnel)
-		float4 per_pixel_parameters;
-		float3 specular_analytical;			// specular radiance
-		float4 spatially_varying_material_parameters;
+	float3 fresnel_analytical;			// fresnel_specular_albedo
+	float3 effective_reflectance;		// specular_albedo (no fresnel)
+	float4 per_pixel_parameters;
+	float3 specular_analytical;			// specular radiance
+	float4 spatially_varying_material_parameters;
 		
-		calc_material_analytic_specular_pbr_ps(
-			view_dir,
-			surface_normal,
-			view_reflect_dir_world,
-			analytical_light_dir,
-			analytical_light_intensity,
-			diffuse_reflectance,
-			texcoord,
-			prt_ravi_diff.w,
-			tangent_frame[2],
-			float4(specular_mask,0,0,0),
-			spatially_varying_material_parameters,
-			fresnel_analytical,
-			effective_reflectance,
-			specular_analytical);
+	calc_material_analytic_specular_pbr_ps(
+		view_dir,
+		surface_normal,
+		view_reflect_dir_world,
+		analytical_light_dir,
+		analytical_light_intensity,
+		diffuse_reflectance,
+		texcoord,
+		prt_ravi_diff.w,
+		tangent_frame[2],
+		float4(specular_mask,0,0,0),
+		spatially_varying_material_parameters,
+		fresnel_analytical,
+		effective_reflectance,
+		specular_analytical);
 
 	
-		float rough = spatially_varying_material_parameters.y;
-		float metallic = spatially_varying_material_parameters.z;
+	float rough = spatially_varying_material_parameters.y;
+	float metallic = spatially_varying_material_parameters.z;
 
 
 	float3 area_specular;
@@ -391,7 +376,7 @@ void calc_material_pbr_ps(
 							fresnel_analytical);
 
 	//float ao_vert = 1 - ((1 - spatially_varying_material_parameters.x) * (1 - prt_ravi_diff.x));
-	diffuse_radiance= (diffuse_radiance + simple_light_diffuse_light) * prt_ravi_diff.x * (1 - metallic);
+	diffuse_radiance= (diffuse_radiance * (1 - metallic) + simple_light_diffuse_light) * prt_ravi_diff.x;
 		
 	specular_radiance.xyz= (simple_light_specular_light + specular_analytical) * prt_ravi_diff.z;//EnvBRDFApprox(fRough, rough, NdotV)
 	

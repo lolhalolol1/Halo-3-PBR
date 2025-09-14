@@ -205,9 +205,9 @@ float4 calc_output_color_with_explicit_light_quadratic(
 	// calculate view reflection direction (in world space of course)
 	float view_dot_normal=	dot(view_dir, bump_normal);
 
-#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss || MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss)
 	float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
-	float3 temp_albedo;
+	float3 temp_albedo = albedo.xyz * mat_albedo_tint;
 	if(chameleon)
 	{
 		float3 fresnel_color = 0;
@@ -229,10 +229,7 @@ float4 calc_output_color_with_explicit_light_quadratic(
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
 
-	#ifdef _PBR_FX_
-		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
-	#else
-		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+		temp_albedo = lerp(temp_albedo, temp_albedo * fresnel_color, 1 - specular_mask);
 	}
 	if(use_mask_material && mask_chameleon)
 	{  
@@ -251,13 +248,11 @@ float4 calc_output_color_with_explicit_light_quadratic(
 
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
-		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
+		temp_albedo = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
 	}
-	else
-	{
-		albedo.xyz = temp_albedo;
-	#endif
-	}
+
+	albedo.xyz = temp_albedo;
+
 #endif
 	///  DESC: 18 7 2007   12:50 BUNGIE\yaohhu :
 	///    We don't need to normalize view_reflect_dir, as long as bump_normal and view_dir have been normalized
@@ -400,9 +395,9 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 	// calculate view reflection direction (in world space of course)
 	float view_dot_normal=	dot(view_dir, bump_normal);
 
-#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss || MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss)
 	float fresnel = 1 - clamp(view_dot_normal, 0.0001, 1);
-	float3 temp_albedo;
+	float3 temp_albedo = albedo.xyz * mat_albedo_tint;
 	if(chameleon)
 	{
 		float3 fresnel_color = 0;
@@ -422,10 +417,8 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
 
-	#ifdef _PBR_FX_
-		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
-	#else
-		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+
+		temp_albedo = lerp(temp_albedo, temp_albedo * fresnel_color, 1 - specular_mask);
 	}
 	if(use_mask_material && mask_chameleon)
 	{  
@@ -444,13 +437,9 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
-		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
+		temp_albedo; = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
 	}
-	else
-	{
-		albedo.xyz = temp_albedo;
-	#endif
-	}
+	albedo.xyz = temp_albedo;
 #endif
 	
 	///  DESC: 18 7 2007   12:50 BUNGIE\yaohhu :
@@ -1454,8 +1443,8 @@ accum_pixel default_dynamic_light_ps(
 
 	float specular_mask;
 	calc_specular_mask_ps(texcoord, albedo.w, specular_mask);
-#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss) || (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr)
-	float3 temp_albedo;
+#if (MATERIAL_TYPE(material_type) == MATERIAL_TYPE_pbr_spec_gloss)
+	float3 temp_albedo = albedo.xyz * mat_albedo_tint;
 	float view_dot_normal = clamp(dot(bump_normal, view_dir), 0.0001, 1);
 	float fresnel  = 1 - clamp(view_dot_normal, 0.0001, 1);
 	if(chameleon)
@@ -1479,10 +1468,7 @@ accum_pixel default_dynamic_light_ps(
 
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
-	#ifdef _PBR_FX_
-		albedo.xyz = lerp(albedo.xyz, albedo.xyz * fresnel_color, specular_mask);
-	#else
-		temp_albedo = lerp(albedo.xyz * mat_albedo_tint, albedo.xyz * mat_albedo_tint * fresnel_color, 1 - specular_mask);
+		temp_albedo = lerp(temp_albedo, temp_albedo * fresnel_color, 1 - specular_mask);
 	}
 	if(use_mask_material && mask_chameleon)
 	{  
@@ -1502,10 +1488,9 @@ accum_pixel default_dynamic_light_ps(
 
 		fresnel_color = color_screen(rim_fresnel, mid_fresnel);
 		fresnel_color = color_screen(fresnel_color, frt_fresnel);
-		albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
-
-	#endif
+		temp_albedo.xyz = lerp(temp_albedo, albedo.xyz * mask_albedo_tint * fresnel_color, specular_mask);
 	}
+	albedo.xyz = temp_albedo;
 #endif
 
 //PBR SHADER MOD: 	The #ifdef is here to make dynamic lights use the PBR material model without the "unproven 'performance' hack" that'd replace it all with
@@ -1524,7 +1509,7 @@ accum_pixel default_dynamic_light_ps(
 		view_reflect_dir,
 		fragment_to_light,
 		light_radiance,
-		albedo,									// diffuse reflectance (ignored for cook-torrance)
+		albedo.xyz,									// diffuse reflectance (ignored for cook-torrance)
 		texcoord,
 		1.0f,
 		vsout.normal,

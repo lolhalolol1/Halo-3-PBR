@@ -107,7 +107,7 @@ void calc_simple_lights_analytical(
 	}
 	specularly_reflected_light *= specular_power;
 }
-
+#define PI 3.14159265358979323846264338327950f
 void calc_simple_lights_ggx(
 		in float3 fragment_position_world,
 		in float3 surface_normal,
@@ -122,7 +122,7 @@ void calc_simple_lights_ggx(
 		out float3 diffusely_reflected_light,						// diffusely reflected light (not including diffuse surface color)
 		out float3 specularly_reflected_light)
 {
-	float pi = 3.14159265358979323846264338327950;
+	//float pi = 3.14159265358979323846264338327950;
 
 	diffusely_reflected_light= float3(0.0f, 0.0f, 0.0f);
 	specularly_reflected_light= float3(0.0f, 0.0f, 0.0f);
@@ -167,7 +167,7 @@ void calc_simple_lights_ggx(
 
         //Normal Distribution Function
         float NDFdenom = max((NdotH * a2_sqrd - NdotH) * NdotH + 1.0, 0.0001);
-        float NDF = a2_sqrd / (pi * NDFdenom * NDFdenom);
+        float NDF = a2_sqrd / (PI * NDFdenom * NDFdenom);
 
         //Geometry
         float L = 2.0 * NdotL / (NdotL + sqrt(a2_sqrd + (1.0 - a2_sqrd) * (NdotL * NdotL)));
@@ -183,32 +183,12 @@ void calc_simple_lights_ggx(
 
 		//specularly_reflected_light = 0.00001f;
 
-        //Oren-Nayar
-		//wfloat3 fresnel = 0.04 + (1 - 0.04) * pow(1.0 - HoV, 5.0);
-		/*
-		The github this function is pulled from (https://github.com/glslify/glsl-diffuse-oren-nayar) states that values for the float below above 0.96
-		will not be energy conserving. This is because the output of this function is intended to be multiplied by albedo afterwards for the final diffuse.
-
-		I may need to use this for more than just diffuse, so this will be left as 1.0 and we can multiply the function's output by the albedo map and
-		then (1 - Fresnel) to maintain energy conservation.
-		*/
-
-		float albedo_standin = 0.96;
-
+		float ON_a2 = a * a;
 		float s = VdotL - NdotL * NdotV;
 		float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
-
-		float sigma2 = (1 / sqrt(2)) * atan(a * a);
-		float A = 1.0 + sigma2 * (albedo_standin / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
-		float B = 0.45 * sigma2 / (sigma2 + 0.09);
-
-
-		float3 ONdif = (albedo_standin * max(0.0, NdotL) * saturate(A + B * s / t) * light_radiance / pi);
-
-		
-		//Halo 3 diffuse
-		//float cosine_lobe= dot(surface_normal, fragment_to_light);//Unclamped NdotL
-		//diffusely_reflected_light  += light_radiance * max(0.05f, cosine_lobe);
+		float3 on_A		= 1 + ON_a2 * (-0.5 / (ON_a2 + 0.33) + 0.17 * albedo / (ON_a2 + 0.13));
+		float on_B 	= 	  0.45 * ON_a2 / (ON_a2 + 0.09);
+		float3 ONdif =  albedo * (1 - fresnel) * (on_A + on_B * s / t) * (1 / PI) * light_radiance * NdotL;
 		
 		//Oren-Nayar diffuse
 		diffusely_reflected_light	+= ONdif * (1 - metallic);
