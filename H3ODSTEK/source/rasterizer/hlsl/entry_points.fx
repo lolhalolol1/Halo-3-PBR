@@ -278,12 +278,21 @@ float4 calc_output_color_with_explicit_light_quadratic(
 	out_color.xyz= out_color.xyz * BLEND_MULTIPLICATIVE;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
 #elif defined(BLEND_FRESNEL)
-	out_color.xyz= (diffuse_radiance * albedo.xyz * albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
+	out_color.xyz= (diffuse_radiance 
+#ifndef _PBR_FX_
+					* albedo.xyz
+#endif 
+					* albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= saturate(specular_radiance.w + albedo.w);
 #else
-	out_color.xyz= (diffuse_radiance * albedo.xyz + specular_radiance + self_illum_radiance + envmap_radiance);
+	out_color.xyz= (diffuse_radiance
+#ifndef _PBR_FX_		
+	 				* albedo.xyz 
+#endif
+					+ specular_radiance + self_illum_radiance + envmap_radiance);
+	 
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
@@ -418,12 +427,20 @@ float4 calc_output_color_with_explicit_light_linear_with_dominant_light(
 	out_color.xyz= out_color.xyz * BLEND_MULTIPLICATIVE;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
 #elif defined(BLEND_FRESNEL)
-	out_color.xyz= (diffuse_radiance * albedo.xyz * albedo.w + self_illum_radiance + envmap_radiance + specular_radiance);
+	out_color.xyz= (diffuse_radiance 
+#ifndef _PBR_FX_
+					* albedo.xyz * albedo.w 
+#endif
+					+ self_illum_radiance + envmap_radiance + specular_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= saturate(specular_radiance.w + albedo.w);
 #else
-	out_color.xyz= (diffuse_radiance * albedo.xyz + specular_radiance + self_illum_radiance + envmap_radiance);
+	out_color.xyz= (diffuse_radiance 
+#ifndef _PBR_FX_
+					* albedo.xyz 
+#endif
+					+ specular_radiance + self_illum_radiance + envmap_radiance);
 	APPLY_OVERLAYS(out_color.xyz, texcoord, view_dot_normal)
 	out_color.xyz= (out_color.xyz * extinction + inscatter * BLEND_FOG_INSCATTER_SCALE) * g_exposure.rrr;
 	out_color.w= ALPHA_CHANNEL_OUTPUT;
@@ -1357,7 +1374,7 @@ accum_pixel default_dynamic_light_ps(
 		view_reflect_dir,
 		fragment_to_light,
 		light_radiance,
-		albedo,									// diffuse reflectance (ignored for cook-torrance)
+		albedo.xyz,									// diffuse reflectance (ignored for cook-torrance)
 		texcoord,
 		1.0f,
 		tangent_frame,
@@ -1372,9 +1389,9 @@ accum_pixel default_dynamic_light_ps(
 								fragment_to_light,
 								light_radiance,
 								specular_fresnel_color,
-								texcoord,
-								albedo
-								) * albedo * (1 - spatially_varying_material_parameters.z);
+								spatially_varying_material_parameters.y,
+								albedo.xyz
+								) * (1 - spatially_varying_material_parameters.z);
 	radiance += analytic_specular_radiance;
 
 #else
