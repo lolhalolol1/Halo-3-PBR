@@ -1,13 +1,18 @@
 # Halo 3 PBR
 A PBR material shader for Halo 3 and, once I get around to it, Halo 3: ODST.
-This is meant to be used with environment mapping set to per-pixel for now, with cubemaps at a resolution of at least 128 per face.
 
-A PBR terrain shader will come at some point.
+I've also included a fix for dynamic shadows not being cast on decorators correctly, which is in a separate folder
+for those who want just that without the PBR shaders. 
+(Credit to whoever on the Eldewrito team found the fix for this, and to MtnDewIt for finding it and informing me of it)
+
+Updates to the documentation to come, assuming I get around to it.
+If anything here is out-of-date, unclear, or doesn't solve an issue you're having, DM me on Discord.
+
 
 ## How to install:
 Drag and drop the files inside this repo's "H3EK" folder into your editing kit's root directory.
 
-## How to use:
+## How to use PBR
 Firstly make sure you have a texture set up in the following way:
 - AO map on the red channel
 - Roughness map on the green channel
@@ -26,13 +31,20 @@ If it still looks wrong, message me on Discord about it.
 
 ## Environment Mapping and Cubemaps
 ### IMPORTANT:
-As of right now this is intended to only be used with the "per-pixel" environment mapping option, as dynamic cubemaps are not
-generated with enough mips to represent rough, blurry reflections properly. Cubemaps used should also be of a high enough 
-resolution to have a sufficient amount of mips. 128 per face is what I'd call the minimum resolution. 
+For dynamic reflections to work properly with PBR, you will need each of your level's cubemaps to be generated at the highest 
+possible resolution (256) after using Pedro13's guide on editing tool to allow for full mipmap chains on cubemaps (found in the
+"resources" tab in the Halo Mods Discord server).
+Doing so will affect dynamic cubemap reflections on vanilla materials and there's no real catch-all fix I can implement for that,
+but a rough fix would be to turn up the roughness multiplier in under environment_mapping in the tag.
 
-I've included a "dynamic_expensive" option made by @EnashMods that will use dynamic cubemaps and blur/convolute them in real time, but this is
-only there for testing purposes really.
-***Do not use this option*** if you use a mid-range/budget GPU as it is very expensive to run, and I strongly recommend you don't use this in any publicly released mods. If you do use it, cap your framerate.
+You can also use static cubemaps, but you need to make sure it is of a high-enough resolution and has a decent amount of mips. Results
+likely won't be 100% correct either as I'm pretty sure manually imported cubemaps don't get their mips blurred the way dynamic ones do.
+
+I've included a "dynamic_expensive" option made by @EnashMods that will use dynamic cubemaps and blur/convolute them in real time instead
+of relying on the mips of a higher-resolution cubemap, but results will be inconsistent due to the varying resolutions of vanilla cubemaps
+and performance will be significantly impacted.
+***Do not use this option*** if you use a mid-range/budget GPU, and I strongly recommend you don't use this in any publicly released mods. 
+If you do use it, cap your framerate unless you want to cook a steak on your GPU.
 
 ## Options
 There are several options to help you customize or tweak your materials Guerilla.
@@ -98,3 +110,14 @@ There are several options to help you customize or tweak your materials Guerilla
 
 +  metallic_multiplier
    - Like roughness_multiplier but for metalness.
+
+## Fix for shadows on decorators
+Installing this should be as simple as throwing the folders inside "decorator shadow fix\H3EK" into your own toolset and letting it replace files with the same name.
+
+If you wanna know why it was broken in MCC, basically some parts of the game's shader code will have checks for if it's being compiled for PC or Xbox, or if it's for 
+DX9 or DX11, for the sake of using different code that'll work on those platforms. The code for decorators has one of these checks which, on PC/DX11, has it pass through
+a normal direction (direction the decorator's surface is facing towards) to the game engine. The normal direction for this actually isn't set up anywhere so it ends
+up as 0,0,0. Meanwhile, the code for Xbox 360 doesn't pass in a normal direction at all and it ends up getting defaulted to a normal direction facing upwards (0,0,1). 
+
+This means the fix is literally one short line of code and changing a single word on the line after. Thanks to MtnDewIt for remembering the issue was fixed in Eldewrito
+and checking what the fix was, and obviously to whoever on the Eldewrito discovered the fix in the first place.
