@@ -115,9 +115,11 @@ There are several options to help you customize or tweak your materials Guerilla
 Installing this should be as simple as throwing the folders inside "decorator shadow fix\H3EK" into your own toolset and letting it replace files with the same name.
 
 If you wanna know why it was broken in MCC, basically some parts of the game's shader code will have checks for if it's being compiled for PC or Xbox, or if it's for 
-DX9 or DX11, for the sake of using different code that'll work on those platforms. The code for decorators has one of these checks which, on PC/DX11, has it pass through
-a normal direction (direction the decorator's surface is facing towards) to the game engine. The normal direction for this actually isn't set up anywhere so it ends
-up as 0,0,0. Meanwhile, the code for Xbox 360 doesn't pass in a normal direction at all and it ends up getting defaulted to a normal direction facing upwards (0,0,1). 
+DX9 or DX11, for the sake of using different code that'll work on those platforms. The code for decorators has one of these checks which, on PC, has it pass through
+a normal direction (direction the decorator's surface is facing towards) to the game engine. Meanwhile, the code for Xbox 360 doesn't pass in a normal direction at all
+and it ends up getting defaulted to a normal direction facing upwards (0,0,1). Technically passing through the actual normal direction should be fine or outright better 
+but it plays into visual flaws with how Halo 3's dynamic shadows are set up, where they get weaker based on the shadowed surface's direction relative to the shadow's 
+direction. Just setting the normals to a direction facing up isn't correct, but sidesteps the shadow issue for the most part.
 
-This means the fix is literally one short line of code and changing a single word on the line after. Thanks to MtnDewIt for remembering the issue was fixed in Eldewrito
-and checking what the fix was, and obviously to whoever on the Eldewrito discovered the fix in the first place.
+Luckily this means the fix is literally one short line of code and changing a single word on the line after. Thanks to MtnDewIt for pointing out that a fix existed in Eldewrito
+and finding it, and obviously thanks to Pedro13 for making the original fix in Eldewrito.
