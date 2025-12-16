@@ -33,6 +33,7 @@
 #ifndef PI
 #define PI 3.14159265358979323846264338327950
 #endif
+#define _epsilon 0.00001f
 
 #if defined(pc) && (DX_VERSION == 9)
 PARAM(float4, debug_tint);
@@ -329,25 +330,38 @@ float3 oren_nayar(
 	in float3 view_normal,
 	in float3 view_light_dir,
 	in float3 light_color,
-	in float rough,
+	in float roughness,
 	in float3 fresnel)
 {
 	//float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
 	float3 H = normalize(view_light_dir + view_dir);
+	float NdotH = saturate(dot(view_normal, H));
     float NdotL = max(dot(view_normal, view_light_dir), 0.0001f);
 	float NdotV = saturate(dot(view_normal, view_dir));
 	float HdotV = saturate(dot(view_dir, H));
 	float LdotV = saturate(dot(view_light_dir, view_dir));
 			//NdotL = NdotL <= 0.01 ? 0.0001 : ceil(NdotL * 2) / 2;
 
+
 	float s = LdotV - NdotL * NdotV;
 	float t = lerp(1.0, max(NdotL, NdotV), step(0.0, s));
-	float sigma2 = (1 / sqrt(2)) * atan(rough * rough);
+	float sigma2 = (1 / sqrt(2)) * atan(roughness * roughness);
 	float3 on_A = 1.0 + sigma2 * (albedo / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
 	float on_B = 0.45 * sigma2 / (sigma2 + 0.09);
 
     float3 ON = (albedo * (1 - fresnel) / PI) * saturate(on_A + on_B * s / t) * NdotL * light_color;
 	return ON;
+/*
+	float facing = 0.5 + 0.5 * LdotV;
+	float rough = facing * (0.9 - 0.4 * facing) * ((0.5 + NdotH) / max(NdotH, _epsilon));
+	float smooth = 1.05 * 0.96 * (1 - pow(1 - NdotL, 5)) * (1 - pow(1 - NdotV, 5));
+	float single = (1 / PI) * lerp(smooth, rough, roughness);
+	float multi = 0.1159 * roughness;
+
+	bool NdotLisPos = NdotL > 0.0f;
+	bool NdotVisPos = NdotV > _epsilon;
+	float3 dif = albedo * saturate((single + albedo * multi)) * light_color * NdotL;
+	return dif;*/
 }
 
 float3 on_and_sh_order2(
@@ -389,7 +403,7 @@ float3 on_and_sh_order2(
 	//float sh_col_max = max(lightprobe_color.r, max(lightprobe_color.g, lightprobe_color.b));
 	//float sh_scalar = (round(sh_col_max * 30) / 30) / sh_col_max;
 	sh_spec_scalar = lightprobe_color * ao;
-	return ON + lightprobe_color * albedo;
+	return ON + sh_spec_scalar * albedo;
 }
 
 float3 on_and_sh(
@@ -517,10 +531,11 @@ COMPILER_IFANY																																					\
 if (blend_amount > 0.0)																																			\
 {																																								\
 	float4 base=	sampleBiasGlobal2D(base_map_m_##material,	transform_texcoord(original_texcoord.xy, base_map_m_##material##_xform));						\
-	float3 orm_uv = float3(transform_texcoord(original_texcoord.xy, base_map_m_##material##_xform), orm_index_m_##material);									\
-	base.w = 1 - orm_maps.t.SampleLevel(orm_maps.s, orm_uv, ps_global_mip_bias).y;																				\
 	float4 detail=	sampleBiasGlobal2D(detail_map_m_##material,	transform_texcoord(original_texcoord.xy, detail_map_m_##material##_xform));						\
-	albedo_accumulate += base * float4(detail.rgb, 1) * blendweight;																							\
+	float3 orm_uv = float3(transform_texcoord(original_texcoord.xy, base_map_m_##material##_xform), orm_index_m_##material);									\
+	base.rgb *= lerp((float3)1.0f, detail.rgb, base.w);																											\
+	base.w = 1 - orm_maps.t.SampleLevel(orm_maps.s, orm_uv, ps_global_mip_bias).y;																				\
+	albedo_accumulate += base * blendweight;																													\
 	{																																							\
 		float3 material_bump_normal;																															\
 		calc_bumpmap(																																			\
@@ -551,13 +566,21 @@ albedo_pixel albedo_ps(
 	float4 albedo= 0.0f;
 	float3 bump_normal= 0.0f;
 #ifdef _PBR_FX_
+	#if ACTIVE_MATERIAL(material_0_type)
 		ACCUMULATE_MATERIAL_ALBEDO_AND_BUMP_PBR(0, blend.x, albedo, blend.xxxx, bump_normal);
+	#endif
 
+	#if ACTIVE_MATERIAL(material_1_type)	
 		ACCUMULATE_MATERIAL_ALBEDO_AND_BUMP_PBR(1, blend.y, albedo, blend.yyyy, bump_normal);
+	#endif
 
+	#if ACTIVE_MATERIAL(material_2_type)	
 		ACCUMULATE_MATERIAL_ALBEDO_AND_BUMP_PBR(2, blend.z, albedo, blend.zzzz, bump_normal);
+	#endif
 
+	#if ACTIVE_MATERIAL(material_3_type)	
 		ACCUMULATE_MATERIAL_ALBEDO_AND_BUMP_PBR(3, blend.w, albedo, blend.wwww, bump_normal);
+	#endif
 #else
 	#if ACTIVE_MATERIAL(material_0_type)
 		ACCUMULATE_MATERIAL_ALBEDO_AND_BUMP(0, blend.x, albedo, blend.xxxx, bump_normal);
@@ -905,14 +928,22 @@ void blend_surface_parameters(
 	specular.fresnel_steepness= 0.0f;	// default steepness is 5.0
 	specular.weight= 0.0f;					// add a teeny bit of initial weight, just to ensure no divide by zero in the final normalization
 	{
-			
+		float2 ao_metal = 0;
 			//Do this as a temporary. We can make a different version of the bumpmap function that passes back z and alpha, which we can pass back into here.
-			float3 ao_metal0	= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_0_xform), orm_index_m_0), ps_global_mip_bias).xyz * blend.x;
-			float3 ao_metal1	= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_1_xform), orm_index_m_1), ps_global_mip_bias).xyz * blend.y;
-			float3 ao_metal2	= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_2_xform), orm_index_m_2), ps_global_mip_bias).xyz * blend.z;
-			float3 ao_metal3	= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_3_xform), orm_index_m_3), ps_global_mip_bias).xyz * blend.w;
-			float3 ao_metal 		= (ao_metal0) + (ao_metal1) + (ao_metal2) + (ao_metal3);
-			orm = float4(ao_metal.x, 1 - albedo.w, ao_metal.z,1);//float4(ao_metal.x, 1 - albedo.w, ao_metal.z,1);
+		#if ACTIVE_MATERIAL(material_0_type)
+			ao_metal	+= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_0_xform), orm_index_m_0), ps_global_mip_bias).xz * blend.x;
+		#endif
+		#if ACTIVE_MATERIAL(material_1_type)
+			ao_metal	+= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_1_xform), orm_index_m_1), ps_global_mip_bias).xz * blend.y;
+		#endif
+		#if ACTIVE_MATERIAL(material_2_type)
+			ao_metal	+= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_2_xform), orm_index_m_2), ps_global_mip_bias).xz * blend.z;
+		#endif
+		#if ACTIVE_MATERIAL(material_3_type)
+			ao_metal	+= orm_maps.t.SampleLevel(orm_maps.s, float3(transform_texcoord(texcoord.xy, base_map_m_3_xform), orm_index_m_3), ps_global_mip_bias).xz * blend.w;
+		#endif
+			//float3 ao_metal 		= (ao_metal0) + (ao_metal1) + (ao_metal2) + (ao_metal3);
+			orm = float4(ao_metal.x, 1 - albedo.w, ao_metal.y,1);//float4(ao_metal.x, 1 - albedo.w, ao_metal.z,1);
 			BLEND_SPECULAR_PBR(0, 1, specular_pbr);
 
 		diffuse_coefficient += (1 - orm.b);
